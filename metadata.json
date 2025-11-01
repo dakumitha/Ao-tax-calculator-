@@ -1,0 +1,5 @@
+{
+  "name": "Comprehensive Tax Computation Framework",
+  "description": "A detailed tax computation tool for assessing officers to calculate tax liability based on Indian Income Tax laws. It includes calculations for all income heads, deductions, loss set-offs, special tax regimes, and generates a comparative computation summary.",
+  "requestFramePermissions": []
+}
