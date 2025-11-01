@@ -36,6 +36,7 @@ const newInternationalIncomeItem = (): InternationalIncomeItem => ({
     nature: InternationalIncomeNature.Salary,
     amountInINR: null,
     taxPaidInINR: null,
+    taxPayableUnder115JBJC: null,
     dtaaApplicable: false,
     applicableDtaaArticle: '15', // Default for Salary
     taxRateAsPerDtaa: null,
@@ -823,6 +824,14 @@ export default function App() {
         </thead>
     );
 
+    const FormField: React.FC<{ label: string; children: React.ReactNode; helpText?: string; className?: string }> = ({ label, children, helpText, className }) => (
+        <div className={className}>
+            <label className="block text-sm font-medium text-gray-700">{label}</label>
+            {children}
+            {helpText && <p className="mt-1 text-xs text-gray-500">{helpText}</p>}
+        </div>
+    );
+
     switch (activeTab) {
       case 'Profile':
         return (<>
@@ -1397,97 +1406,83 @@ export default function App() {
             { value: InternationalIncomeNature.OtherIncome, label: "Other Income" },
         ];
         
-        const complianceStatusOptions = [
-            { value: ComplianceStatus.Compliant, label: "Compliant" },
-            { value: ComplianceStatus.NotApplicable, label: "Not Applicable" },
-            { value: ComplianceStatus.DeviationFound, label: "Deviation Found" },
-            { value: ComplianceStatus.NotFiled, label: "Form 3CEB Not Filed" },
-        ];
-
-
         return (
             <Card title="International Income & Foreign Tax Credit (FTC) - Form 67">
                 <div className="overflow-x-auto">
-                    <table className="w-full min-w-[1400px] text-sm">
+                    <table className="w-full text-sm">
                         <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
                             <tr>
-                                <th className="p-2 text-left font-semibold">Country</th>
-                                <th className="p-2 text-left font-semibold">Nature of Income</th>
-                                <th className="p-2 text-left font-semibold">Income (INR)</th>
-                                <th className="p-2 text-left font-semibold">Foreign Tax Paid (INR)</th>
-                                <th className="p-2 text-center font-semibold whitespace-nowrap">Form 67 Filed?</th>
-                                <th className="p-2 text-center font-semibold whitespace-nowrap">DTAA Applicable?</th>
-                                <th className="p-2 text-left font-semibold">DTAA Article</th>
-                                <th className="p-2 text-left font-semibold">DTAA Rate (%)</th>
-                                <th className="p-2 text-right font-semibold">Indian Tax</th>
-                                <th className="p-2 text-right font-semibold">Total FTC</th>
-                                <th className="p-2 text-center font-semibold">Action</th>
+                                <th className="p-2 text-left">Country</th>
+                                <th className="p-2 text-left">Nature</th>
+                                <th className="p-2 text-right">Income (INR)</th>
+                                <th className="p-2 text-right">Foreign Tax Paid</th>
+                                <th className="p-2 text-right">Tax u/s 115JB/JC</th>
+                                <th className="p-2 text-center">DTAA?</th>
+                                <th className="p-2 text-left">DTAA Article</th>
+                                <th className="p-2 text-right">DTAA Rate (%)</th>
+                                <th className="p-2 text-center">Form 67?</th>
+                                <th className="p-2 text-center">Action</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {internationalIncome.map((item) => {
-                                const itemResult = intlResult.itemized.find(r => r.id === item.id);
-                                return (
-                                    <React.Fragment key={item.id}>
-                                        <tr className="border-b align-top">
-                                            <td className="p-2"><input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
-                                            <td className="p-2">
-                                                <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-2 border rounded-md min-w-[150px]">
-                                                    {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                                </select>
-                                            </td>
-                                            <td className="p-2"><input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
-                                            <td className="p-2"><input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
-                                            <td className="p-2 text-center"><input type="checkbox" checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4 mt-3" /></td>
-                                            <td className="p-2 text-center"><input type="checkbox" checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4 mt-3" /></td>
-                                            <td className="p-2"><input type="text" value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} disabled={!item.dtaaApplicable} className="w-full p-2 border rounded-md disabled:bg-gray-200 min-w-[80px]" /></td>
-                                            <td className="p-2"><input type="number" step="0.01" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} disabled={!item.dtaaApplicable} className="w-full p-2 border rounded-md disabled:bg-gray-200 min-w-[80px]" /></td>
-                                            <td className="p-2 text-right pt-3 font-mono">{itemResult ? formatCurrency(itemResult.indianTax) : '...'}</td>
-                                            <td className="p-2 text-right pt-3 font-mono font-bold">{itemResult ? formatCurrency(itemResult.totalFtc) : '...'}</td>
-                                            <td className="p-2 text-center"><button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-2 text-xl" aria-label="Remove Foreign Income Item">&times;</button></td>
-                                        </tr>
-                                        {item.nature === InternationalIncomeNature.CapitalGains && (
-                                            <tr className="bg-gray-50 border-b">
-                                                <td colSpan={11} className="p-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <input type="checkbox" checked={item.isLTCG} onChange={e => handleUpdate(item.id, 'isLTCG', e.target.checked)} className="h-4 w-4" id={`isLTCG-${item.id}`} />
-                                                        <label htmlFor={`isLTCG-${item.id}`} className="font-medium text-sm">Is this Long-Term Capital Gain?</label>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
-                                        {item.nature === InternationalIncomeNature.BusinessIncome && (
-                                            <tr className="bg-gray-50 border-b">
-                                                <td colSpan={11} className="p-3">
-                                                    <div className="flex items-center gap-6">
-                                                        <span className="font-semibold text-sm">Transfer Pricing:</span>
-                                                        <div className="flex items-center gap-2">
-                                                          <input type="checkbox" checked={item.transferPricing.isAssociatedEnterprise} onChange={e => handleUpdate(item.id, 'transferPricing.isAssociatedEnterprise', e.target.checked)} className="h-4 w-4" id={`isAE-${item.id}`} />
-                                                          <label htmlFor={`isAE-${item.id}`} className="text-sm">Involves Associated Enterprise?</label>
-                                                        </div>
-                                                        <div className={`flex items-center gap-2 ${!item.transferPricing.isAssociatedEnterprise && 'opacity-50'}`}>
-                                                            <label htmlFor={`alp-${item.id}`} className="text-sm">Arm's Length Price (ALP):</label>
-                                                            <input type="text" id={`alp-${item.id}`} disabled={!item.transferPricing.isAssociatedEnterprise} value={formatInputValue(item.transferPricing.armsLengthPrice)} onChange={e => handleUpdate(item.id, 'transferPricing.armsLengthPrice', parseFormattedValue(e.target.value))} className="p-1 border rounded-md" />
-                                                        </div>
-                                                        <div className={`flex items-center gap-2 ${!item.transferPricing.isAssociatedEnterprise && 'opacity-50'}`}>
-                                                            <label htmlFor={`form3ceb-${item.id}`} className="text-sm">Form 3CEB Status:</label>
-                                                            <select id={`form3ceb-${item.id}`} disabled={!item.transferPricing.isAssociatedEnterprise} value={item.transferPricing.form3CEBStatus} onChange={e => handleUpdate(item.id, 'transferPricing.form3CEBStatus', e.target.value)} className="p-1 border rounded-md text-sm">
-                                                              {complianceStatusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </React.Fragment>
-                                );
-                            })}
+                            {internationalIncome.map((item) => (
+                                <tr key={item.id} className="border-b align-top">
+                                    <td className="p-1"><input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-1 border rounded-md text-sm" /></td>
+                                    <td className="p-1">
+                                        <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-1 border rounded-md text-sm">
+                                            {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                        </select>
+                                    </td>
+                                    <td className="p-1"><input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
+                                    <td className="p-1"><input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
+                                    <td className="p-1"><input type="text" value={formatInputValue(item.taxPayableUnder115JBJC)} onChange={e => handleUpdate(item.id, 'taxPayableUnder115JBJC', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
+                                    <td className="p-1 text-center pt-2"><input type="checkbox" checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4" /></td>
+                                    <td className="p-1"><input type="text" disabled={!item.dtaaApplicable} value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} className={`w-full p-1 border rounded-md text-sm ${!item.dtaaApplicable && 'bg-gray-100'}`} /></td>
+                                    <td className="p-1"><input type="number" disabled={!item.dtaaApplicable} step="0.01" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} className={`w-full p-1 border rounded-md text-sm text-right ${!item.dtaaApplicable && 'bg-gray-100'}`} /></td>
+                                    <td className="p-1 text-center pt-2"><input type="checkbox" checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4" /></td>
+                                    <td className="p-1 text-center"><button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-2 text-xl leading-none" aria-label="Remove Foreign Income Item">&times;</button></td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
                 </div>
                 <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Foreign Income Source</button>
+                
+                {internationalIncome.length > 0 && 
                 <div className="mt-6 border-t pt-4">
-                    <h3 className="font-semibold text-lg mb-2 text-gray-800">Total International Income Summary</h3>
+                    <h3 className="font-semibold text-lg mb-2 text-gray-800">FTC Computation Summary</h3>
+                     <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
+                                <tr>
+                                    <th className="p-2 text-left">Country</th>
+                                    <th className="p-2 text-right">Indian Tax on Foreign Income</th>
+                                    <th className="p-2 text-right">FTC u/s 90/90A (DTAA)</th>
+                                    <th className="p-2 text-right">FTC u/s 91 (Non-DTAA)</th>
+                                    <th className="p-2 text-right">Total FTC Allowed</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {internationalIncome.map(item => {
+                                    const itemResult = intlResult.itemized.find(r => r.id === item.id);
+                                    if (!itemResult) return <tr key={item.id}><td colSpan={5} className="p-2 text-center text-gray-500">Calculating...</td></tr>;
+                                    return (
+                                        <tr key={item.id} className="border-b">
+                                            <td className="p-2">{item.country || 'N/A'}</td>
+                                            <td className="p-2 text-right">{formatCurrency(itemResult.indianTax)}</td>
+                                            <td className="p-2 text-right">{formatCurrency(itemResult.ftc90_90A)}</td>
+                                            <td className="p-2 text-right">{formatCurrency(itemResult.ftc91)}</td>
+                                            <td className="p-2 text-right font-bold">{formatCurrency(itemResult.totalFtc)}</td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                }
+
+                <div className="mt-6 border-t pt-4">
                     <div className="space-y-2 p-4 bg-gray-100 rounded-lg">
                          <div className="flex justify-between font-semibold"><span>Total Net Foreign Income Added</span><span className="font-mono">₹ {formatCurrency(intlResult.netIncomeAdded)}</span></div>
                          <div className="flex justify-between"><span>Total Indian Tax on Foreign Income</span><span className="font-mono">₹ {formatCurrency(intlResult.taxOnIncome)}</span></div>

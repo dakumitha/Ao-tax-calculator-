@@ -279,6 +279,7 @@ export interface InternationalIncomeItem {
     nature: InternationalIncomeNature;
     amountInINR: number | null;
     taxPaidInINR: number | null;
+    taxPayableUnder115JBJC: number | null;
     dtaaApplicable: boolean;
     applicableDtaaArticle: string;
     taxRateAsPerDtaa: number | null; // As a decimal, e.g., 0.15 for 15%

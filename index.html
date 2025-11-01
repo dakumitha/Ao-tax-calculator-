@@ -23,6 +23,7 @@
     @media print {
         body {
             background-color: white !important;
+            font-size: 9pt; /* Smaller base font size */
         }
         header, nav, button, input, select, textarea, .no-print {
             display: none !important;
@@ -33,25 +34,34 @@
             left: 0;
             top: 0;
             width: 100%;
+            padding: 0;
+            margin: 0;
         }
         .print-only {
             display: block;
-            padding: 1rem 0;
-            border-bottom: 2px solid #333;
-            margin-bottom: 1.5rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #666; /* Thinner border */
+            margin-bottom: 1rem;
         }
         .card-for-print {
             box-shadow: none !important;
             border: 1px solid #ccc;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem; /* Reduced margin */
+            padding: 0.5rem; /* Reduced padding */
             page-break-inside: avoid;
         }
         .card-for-print > h2 {
-            font-size: 1.25rem;
+            font-size: 1.1rem; /* Smaller heading */
             border-bottom: 1px solid #ddd;
+            padding-bottom: 0.25rem; /* Reduced padding */
+            margin-bottom: 0.5rem; /* Reduced margin */
         }
         table {
-            font-size: 10pt !important;
+            font-size: 8pt !important; /* Smaller table font */
+            width: 100%;
+        }
+        th, td {
+             padding: 4px !important; /* Reduced padding for table cells */
         }
         tr {
             page-break-inside: avoid;
