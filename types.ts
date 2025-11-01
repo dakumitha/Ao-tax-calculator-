@@ -152,7 +152,20 @@ export interface CapitalGains {
   ltcg112A: IncomeSource;
   ltcgOther: IncomeSource;
   adjustment50C: IncomeSource;
-  exemptions54: IncomeSource;
+  costOfImprovement: IncomeSource;
+  exemption54: IncomeSource;
+  exemption54B: IncomeSource;
+  exemption54D: IncomeSource;
+  exemption54EC: IncomeSource;
+  exemption54EE: IncomeSource;
+  exemption54F: IncomeSource;
+  exemption54G: IncomeSource;
+  exemption54GA: IncomeSource;
+  exemption54GB: IncomeSource;
+  adjustment50: IncomeSource;
+  adjustment50CA: IncomeSource;
+  adjustment50D: IncomeSource;
+  adjustment43CA: IncomeSource;
 }
 
 export interface OtherSources {
@@ -262,6 +275,7 @@ export interface TransferPricingDetails {
 
 export interface InternationalIncomeItem {
     id: string;
+    country: string;
     nature: InternationalIncomeNature;
     amountInINR: number | null;
     taxPaidInINR: number | null;
@@ -275,6 +289,8 @@ export interface InternationalIncomeItem {
 }
 
 export interface TaxData {
+  assesseeName: string;
+  pan: string;
   assessmentYear: string;
   taxpayerType: 'individual' | 'huf' | 'company' | 'firm' | 'llp' | 'aop' | 'boi' | 'local authority' | 'artificial juridical person';
   residentialStatus: ResidentialStatus;
@@ -342,7 +358,9 @@ export interface SetOffDetail {
 export interface InternationalIncomeComputation {
     id: string;
     indianTax: number;
-    ftcAllowed: number;
+    ftc90_90A: number;
+    ftc91: number;
+    totalFtc: number;
     netTax: number;
     applicableRate: number;
 }
@@ -376,7 +394,7 @@ export interface ComputationResult {
       international: {
           netIncomeAdded: number;
           taxOnIncome: number;
-          ftcAllowed: number;
+          totalFtcAllowed: number;
           itemized: InternationalIncomeComputation[];
       };
     },

@@ -32,6 +32,7 @@ const newVehicle44AE = (): Vehicle44AE => ({
 
 const newInternationalIncomeItem = (): InternationalIncomeItem => ({
     id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+    country: '',
     nature: InternationalIncomeNature.Salary,
     amountInINR: null,
     taxPaidInINR: null,
@@ -50,6 +51,8 @@ const newInternationalIncomeItem = (): InternationalIncomeItem => ({
 
 
 const initialTaxData: TaxData = {
+  assesseeName: '',
+  pan: '',
   assessmentYear: '2024-25',
   taxpayerType: 'individual',
   residentialStatus: 'resident_ordinarily_resident',
@@ -132,7 +135,27 @@ const initialTaxData: TaxData = {
         otherDisallowances: newIncomeSource(),
     }
   },
-  capitalGains: { stcg111A: newIncomeSource(), stcgOther: newIncomeSource(), ltcg112A: newIncomeSource(), ltcgOther: newIncomeSource(), exemptions54: newIncomeSource(), adjustment50C: newIncomeSource() },
+  capitalGains: { 
+    stcg111A: newIncomeSource(), 
+    stcgOther: newIncomeSource(), 
+    ltcg112A: newIncomeSource(), 
+    ltcgOther: newIncomeSource(), 
+    adjustment50C: newIncomeSource(),
+    costOfImprovement: newIncomeSource(),
+    exemption54: newIncomeSource(),
+    exemption54B: newIncomeSource(),
+    exemption54D: newIncomeSource(),
+    exemption54EC: newIncomeSource(),
+    exemption54EE: newIncomeSource(),
+    exemption54F: newIncomeSource(),
+    exemption54G: newIncomeSource(),
+    exemption54GA: newIncomeSource(),
+    exemption54GB: newIncomeSource(),
+    adjustment50: newIncomeSource(),
+    adjustment50CA: newIncomeSource(),
+    adjustment50D: newIncomeSource(),
+    adjustment43CA: newIncomeSource(),
+  },
   otherSources: { otherIncomes: newIncomeSource(), winnings: newIncomeSource(), exemptIncome: newIncomeSource(), disallowance14A: newIncomeSource(), deemedDividend2_22_e: newIncomeSource(), gifts56_2_x: newIncomeSource(), familyPension: newIncomeSource(), interestOnEnhancedCompensation: newIncomeSource(), raceHorseIncome: newIncomeSource() },
   deemedIncome: { sec68_cashCredits: newIncomeSource(), sec69_unexplainedInvestments: newIncomeSource(), sec69A_unexplainedMoney: newIncomeSource(), sec69B_investmentsNotDisclosed: newIncomeSource(), sec69C_unexplainedExpenditure: newIncomeSource(), sec69D_hundiBorrowing: newIncomeSource() },
   internationalIncome: [],
@@ -299,11 +322,13 @@ const format234CMonths = (months: { q1: number, q2: number, q3: number, q4: numb
     return `(on ${parts.join(', ')} shortfall)`;
 };
 
-const SingleInputField: React.FC<{ label: string; path: string; value: number | null; dispatch: React.Dispatch<Action>; helpText?: string }> = ({ label, path, value, dispatch, helpText }) => {
+const SingleInputField: React.FC<{ label: string; path: string; value: number | null | string; dispatch: React.Dispatch<Action>; helpText?: string, type?: 'text' | 'number' }> = ({ label, path, value, dispatch, helpText, type = 'number' }) => {
   const handleChange = (val: string) => {
-    const numValue = parseFormattedValue(val);
-    dispatch({ type: 'UPDATE_FIELD', payload: { path, value: numValue } });
+    const processedValue = type === 'number' ? parseFormattedValue(val) : val;
+    dispatch({ type: 'UPDATE_FIELD', payload: { path, value: processedValue } });
   };
+  
+  const displayValue = type === 'number' ? formatInputValue(value as number) : value;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center mb-2 border-b py-2 last:border-0">
@@ -311,7 +336,7 @@ const SingleInputField: React.FC<{ label: string; path: string; value: number | 
         <label className="text-gray-600 font-medium text-sm">{label}</label>
         {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
       </div>
-      <input type="text" value={formatInputValue(value)} onChange={(e) => handleChange(e.target.value)} className="p-2 border rounded-md bg-white text-left" />
+      <input type="text" value={displayValue as string} onChange={(e) => handleChange(e.target.value)} className="p-2 border rounded-md bg-white text-left" />
     </div>
   );
 };
@@ -360,8 +385,8 @@ const IncomeTableRow: React.FC<{
 };
 
 
-const Card: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
-  <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+const Card: React.FC<{ title: string; children: React.ReactNode, className?: string }> = ({ title, children, className }) => (
+  <div className={`bg-white p-6 rounded-lg shadow-md mb-6 ${className}`}>
     <h2 className="text-xl font-semibold text-gray-800 border-b pb-3 mb-4">{title}</h2>
     {children}
   </div>
@@ -384,6 +409,10 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
     const isIndividualLike = ['individual', 'huf', 'aop', 'boi', 'artificial juridical person'].includes(data.taxpayerType);
     const isNewRegimeAvailable = YEARLY_CONFIGS[data.assessmentYear].NEW_REGIME_AVAILABLE;
 
+    const handlePrint = () => {
+        window.print();
+    };
+
     const comparisonResults = useMemo(() => {
         if (isIndividualLike && isNewRegimeAvailable) {
             const oldRegimeData = { ...JSON.parse(JSON.stringify(data)), taxRegime: TaxRegime.Old };
@@ -403,154 +432,171 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
         const anyLossesToCarryForwardNew = Object.values(newResult.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
         
         return (<>
-            <Card title="Computation Summary & Comparison">
-                <div className="overflow-x-auto">
+            <div className="flex justify-end mb-4 no-print">
+                <button onClick={handlePrint} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v3a2 2 0 002 2h6a2 2 0 002-2v-3h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clipRule="evenodd" /></svg>
+                    Export to PDF
+                </button>
+            </div>
+            <div id="printable-area">
+                 <div className="print-only">
+                    <h2 className="text-2xl font-bold mb-2">Computation of Total Income</h2>
+                    <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+                        <div><strong>Assessee:</strong> {data.assesseeName}</div>
+                        <div><strong>PAN:</strong> {data.pan}</div>
+                        <div><strong>Assessment Year:</strong> {data.assessmentYear}</div>
+                    </div>
+                </div>
+                <Card title="Computation Summary & Comparison" className="card-for-print">
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-gray-200 text-gray-700">
+                                    <th className="p-2 text-left">Particulars</th>
+                                    <th className="p-2 text-right">Old Regime (₹)</th>
+                                    <th className="p-2 text-right">New Regime (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {data.interestCalc.incomeAsPerEarlierAssessment != null && (
+                                    <ComparisonRow label="Income as per Earlier Assessment" oldVal={data.interestCalc.incomeAsPerEarlierAssessment} newVal={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
+                                )}
+                                <ComparisonRow label="Income from Salary" oldVal={oldResult.breakdown.income.salary.assessed} newVal={newResult.breakdown.income.salary.assessed} isBold />
+                                {(oldResult.breakdown.nav > 0 || newResult.breakdown.nav > 0 || oldResult.breakdown.income.houseProperty.assessed !== 0 || newResult.breakdown.income.houseProperty.assessed !== 0) &&
+                                    <>
+                                        <ComparisonRow label="&nbsp;&nbsp;Net Annual Value (NAV)" oldVal={oldResult.breakdown.nav} newVal={newResult.breakdown.nav} />
+                                        <ComparisonRow label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" oldVal={oldResult.breakdown.standardDeduction24a} newVal={newResult.breakdown.standardDeduction24a} isNegative />
+                                    </>
+                                }
+                                <ComparisonRow label="Income from House Property" oldVal={oldResult.breakdown.income.houseProperty.assessed} newVal={newResult.breakdown.income.houseProperty.assessed} isBold />
+                                <ComparisonRow label="Profits and Gains of Business or Profession" oldVal={oldResult.breakdown.income.pgbp.assessed} newVal={newResult.breakdown.income.pgbp.assessed} isBold />
+                                <ComparisonRow label="Capital Gains" oldVal={oldResult.breakdown.income.capitalGains.assessed} newVal={newResult.breakdown.income.capitalGains.assessed} isBold />
+                                <ComparisonRow label="Income from Other Sources" oldVal={oldResult.breakdown.income.otherSources.assessed} newVal={newResult.breakdown.income.otherSources.assessed} isBold />
+                                { (oldResult.breakdown.income.international.netIncomeAdded > 0 || newResult.breakdown.income.international.netIncomeAdded > 0) &&
+                                    <ComparisonRow label="International Income" oldVal={oldResult.breakdown.income.international.netIncomeAdded} newVal={newResult.breakdown.income.international.netIncomeAdded} isBold />
+                                }
+                                <ComparisonRow label="Winnings from Lottery, etc." oldVal={oldResult.breakdown.income.winnings.assessed} newVal={newResult.breakdown.income.winnings.assessed} isBold />
+                                { (oldResult.breakdown.income.deemed > 0 || newResult.breakdown.income.deemed > 0) &&
+                                    <ComparisonRow label="Deemed Income (Sec 68-69D)" oldVal={oldResult.breakdown.income.deemed} newVal={newResult.breakdown.income.deemed} isBold />
+                                }
+                                <ComparisonRow label="Gross Total Income" oldVal={oldResult.grossTotalIncome} newVal={newResult.grossTotalIncome} isBold isAccent />
+                                {(oldResult.totalDeductions > 0 || newResult.totalDeductions > 0) &&
+                                    <ComparisonRow label="Add: Disallowed Deductions under Chapter VI-A" oldVal={oldResult.totalDeductions} newVal={newResult.totalDeductions} />
+                                }
+                                <ComparisonRow label="Net Taxable Income" oldVal={oldResult.netTaxableIncome} newVal={newResult.netTaxableIncome} isBold isAccent />
+                                
+                                <ComparisonRow label="Tax on Total Income (before Surcharge)" oldVal={oldResult.taxLiability} newVal={newResult.taxLiability} />
+                                <ComparisonRow label="Add: Surcharge" oldVal={oldResult.surcharge} newVal={newResult.surcharge} />
+                                { (oldResult.marginalRelief > 0 || newResult.marginalRelief > 0) &&
+                                <ComparisonRow label="Less: Marginal Relief" oldVal={oldResult.marginalRelief} newVal={newResult.marginalRelief} isNegative />
+                                }
+                                <ComparisonRow label="Less: Rebate u/s 87A" oldVal={oldResult.rebate87A} newVal={newResult.rebate87A} isNegative />
+                                <ComparisonRow label="Health & Education Cess" oldVal={oldResult.healthAndEducationCess} newVal={newResult.healthAndEducationCess} />
+                                <ComparisonRow label="Total Tax Liability (before FTC)" oldVal={oldResult.totalTaxPayable + oldResult.relief} newVal={newResult.totalTaxPayable + newResult.relief} isBold isAccent/>
+                                { (oldResult.relief > 0 || newResult.relief > 0) &&
+                                    <ComparisonRow label="Less: Reliefs (FTC)" oldVal={oldResult.relief} newVal={newResult.relief} isNegative />
+                                }
+                                <ComparisonRow label="Final Tax Liability" oldVal={oldResult.totalTaxPayable} newVal={newResult.totalTaxPayable} isBold isAccent/>
+                                <ComparisonRow label="Interest u/s 234A" oldVal={oldResult.interest.u_s_234A} newVal={newResult.interest.u_s_234A} />
+                                <ComparisonRow label="Interest u/s 234B" oldVal={oldResult.interest.u_s_234B} newVal={newResult.interest.u_s_234B} />
+                                <ComparisonRow label="Interest u/s 234C" oldVal={oldResult.interest.u_s_234C} newVal={newResult.interest.u_s_234C} />
+                                <ComparisonRow label="Total Interest" oldVal={oldResult.interest.totalInterest} newVal={newResult.interest.totalInterest} isBold isAccent />
+                                <ComparisonRow label="Less: TDS / TCS" oldVal={data.tds ?? 0} newVal={data.tds ?? 0} isNegative />
+                                <ComparisonRow label="Less: Advance Tax" oldVal={data.advanceTax ?? 0} newVal={data.advanceTax ?? 0} isNegative />
+
+                                <tr className="font-bold text-lg bg-blue-100">
+                                    <td className="p-3 text-left">Net Tax Payable</td>
+                                    <td className="p-3 text-right">{formatCurrency(oldResult.netPayable)}</td>
+                                    <td className="p-3 text-right">{formatCurrency(newResult.netPayable)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+                
+                {oldResult.setOffSummary.length > 0 &&
+                <Card title="Loss Set-Off Details (Old Regime)" className="card-for-print">
                     <table className="w-full text-sm">
-                        <thead>
-                            <tr className="bg-gray-200 text-gray-700">
-                                <th className="p-2 text-left">Particulars</th>
-                                <th className="p-2 text-right">Old Regime (₹)</th>
-                                <th className="p-2 text-right">New Regime (₹)</th>
+                        <thead className="bg-gray-200 text-gray-700">
+                            <tr>
+                                <th className="p-2 text-left">Loss Source</th>
+                                <th className="p-2 text-left">Set-off Against</th>
+                                <th className="p-2 text-right">Amount (₹)</th>
                             </tr>
                         </thead>
                         <tbody>
-                             {data.interestCalc.incomeAsPerEarlierAssessment != null && (
-                                <ComparisonRow label="Income as per Earlier Assessment" oldVal={data.interestCalc.incomeAsPerEarlierAssessment} newVal={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
-                            )}
-                            <ComparisonRow label="Income from Salary" oldVal={oldResult.breakdown.income.salary.assessed} newVal={newResult.breakdown.income.salary.assessed} isBold />
-                            {(oldResult.breakdown.nav > 0 || newResult.breakdown.nav > 0 || oldResult.breakdown.income.houseProperty.assessed !== 0 || newResult.breakdown.income.houseProperty.assessed !== 0) &&
-                                <>
-                                    <ComparisonRow label="&nbsp;&nbsp;Net Annual Value (NAV)" oldVal={oldResult.breakdown.nav} newVal={newResult.breakdown.nav} />
-                                    <ComparisonRow label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" oldVal={oldResult.breakdown.standardDeduction24a} newVal={newResult.breakdown.standardDeduction24a} isNegative />
-                                </>
-                            }
-                            <ComparisonRow label="Income from House Property" oldVal={oldResult.breakdown.income.houseProperty.assessed} newVal={newResult.breakdown.income.houseProperty.assessed} isBold />
-                            <ComparisonRow label="Profits and Gains of Business or Profession" oldVal={oldResult.breakdown.income.pgbp.assessed} newVal={newResult.breakdown.income.pgbp.assessed} isBold />
-                            <ComparisonRow label="Capital Gains" oldVal={oldResult.breakdown.income.capitalGains.assessed} newVal={newResult.breakdown.income.capitalGains.assessed} isBold />
-                            <ComparisonRow label="Income from Other Sources" oldVal={oldResult.breakdown.income.otherSources.assessed} newVal={newResult.breakdown.income.otherSources.assessed} isBold />
-                            { (oldResult.breakdown.income.international.netIncomeAdded > 0 || newResult.breakdown.income.international.netIncomeAdded > 0) &&
-                                <ComparisonRow label="International Income" oldVal={oldResult.breakdown.income.international.netIncomeAdded} newVal={newResult.breakdown.income.international.netIncomeAdded} isBold />
-                            }
-                             <ComparisonRow label="Winnings from Lottery, etc." oldVal={oldResult.breakdown.income.winnings.assessed} newVal={newResult.breakdown.income.winnings.assessed} isBold />
-                             { (oldResult.breakdown.income.deemed > 0 || newResult.breakdown.income.deemed > 0) &&
-                                <ComparisonRow label="Deemed Income (Sec 68-69D)" oldVal={oldResult.breakdown.income.deemed} newVal={newResult.breakdown.income.deemed} isBold />
-                             }
-                            <ComparisonRow label="Gross Total Income" oldVal={oldResult.grossTotalIncome} newVal={newResult.grossTotalIncome} isBold isAccent />
-                            {(oldResult.totalDeductions > 0 || newResult.totalDeductions > 0) &&
-                                <ComparisonRow label="Add: Disallowed Deductions under Chapter VI-A" oldVal={oldResult.totalDeductions} newVal={newResult.totalDeductions} />
-                            }
-                            <ComparisonRow label="Net Taxable Income" oldVal={oldResult.netTaxableIncome} newVal={newResult.netTaxableIncome} isBold isAccent />
-                            
-                            <ComparisonRow label="Tax on Total Income (before Surcharge)" oldVal={oldResult.taxLiability} newVal={newResult.taxLiability} />
-                            <ComparisonRow label="Add: Surcharge" oldVal={oldResult.surcharge} newVal={newResult.surcharge} />
-                             { (oldResult.marginalRelief > 0 || newResult.marginalRelief > 0) &&
-                               <ComparisonRow label="Less: Marginal Relief" oldVal={oldResult.marginalRelief} newVal={newResult.marginalRelief} isNegative />
-                             }
-                            <ComparisonRow label="Less: Rebate u/s 87A" oldVal={oldResult.rebate87A} newVal={newResult.rebate87A} isNegative />
-                            <ComparisonRow label="Health & Education Cess" oldVal={oldResult.healthAndEducationCess} newVal={newResult.healthAndEducationCess} />
-                            <ComparisonRow label="Total Tax Liability" oldVal={oldResult.totalTaxPayable} newVal={newResult.totalTaxPayable} isBold isAccent/>
-                             { (oldResult.relief > 0 || newResult.relief > 0) &&
-                                <ComparisonRow label="Less: Reliefs (FTC)" oldVal={oldResult.relief} newVal={newResult.relief} isNegative />
-                             }
-                            <ComparisonRow label="Interest u/s 234A" oldVal={oldResult.interest.u_s_234A} newVal={newResult.interest.u_s_234A} />
-                            <ComparisonRow label="Interest u/s 234B" oldVal={oldResult.interest.u_s_234B} newVal={newResult.interest.u_s_234B} />
-                            <ComparisonRow label="Interest u/s 234C" oldVal={oldResult.interest.u_s_234C} newVal={newResult.interest.u_s_234C} />
-                            <ComparisonRow label="Total Interest" oldVal={oldResult.interest.totalInterest} newVal={newResult.interest.totalInterest} isBold isAccent />
-                            <ComparisonRow label="Less: TDS / TCS" oldVal={data.tds ?? 0} newVal={data.tds ?? 0} isNegative />
-                            <ComparisonRow label="Less: Advance Tax" oldVal={data.advanceTax ?? 0} newVal={data.advanceTax ?? 0} isNegative />
-
-                            <tr className="font-bold text-lg bg-blue-100">
-                                <td className="p-3 text-left">Net Tax Payable</td>
-                                <td className="p-3 text-right">{formatCurrency(oldResult.netPayable)}</td>
-                                <td className="p-3 text-right">{formatCurrency(newResult.netPayable)}</td>
-                            </tr>
+                            {oldResult.setOffSummary.map((item, index) => (
+                                <tr key={index} className="border-b">
+                                    <td className="p-2">{item.source}</td>
+                                    <td className="p-2">{item.against}</td>
+                                    <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
+                                </tr>
+                            ))}
                         </tbody>
                     </table>
-                </div>
-            </Card>
-            
-            {oldResult.setOffSummary.length > 0 &&
-              <Card title="Loss Set-Off Details (Old Regime)">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-200 text-gray-700">
-                        <tr>
-                            <th className="p-2 text-left">Loss Source</th>
-                            <th className="p-2 text-left">Set-off Against</th>
-                            <th className="p-2 text-right">Amount (₹)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {oldResult.setOffSummary.map((item, index) => (
-                            <tr key={index} className="border-b">
-                                <td className="p-2">{item.source}</td>
-                                <td className="p-2">{item.against}</td>
-                                <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                  </table>
-              </Card>
-            }
-             {newResult.setOffSummary.length > 0 &&
-              <Card title="Loss Set-Off Details (New Regime)">
-                  <table className="w-full text-sm">
-                    <thead className="bg-gray-200 text-gray-700">
-                        <tr>
-                            <th className="p-2 text-left">Loss Source</th>
-                            <th className="p-2 text-left">Set-off Against</th>
-                            <th className="p-2 text-right">Amount (₹)</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {newResult.setOffSummary.map((item, index) => (
-                            <tr key={index} className="border-b">
-                                <td className="p-2">{item.source}</td>
-                                <td className="p-2">{item.against}</td>
-                                <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                  </table>
-              </Card>
-            }
-            {anyLossesToCarryForwardOld && 
-                <Card title="Losses to be Carried Forward (Old Regime)">
-                     <table className="w-full text-sm">
+                </Card>
+                }
+                {newResult.setOffSummary.length > 0 &&
+                <Card title="Loss Set-Off Details (New Regime)" className="card-for-print">
+                    <table className="w-full text-sm">
                         <thead className="bg-gray-200 text-gray-700">
                             <tr>
-                                <th className="p-2 text-left">Loss Type</th>
+                                <th className="p-2 text-left">Loss Source</th>
+                                <th className="p-2 text-left">Set-off Against</th>
                                 <th className="p-2 text-right">Amount (₹)</th>
                             </tr>
                         </thead>
-                         <tbody>
-                            {Object.entries(oldResult.lossesCarriedForward).map(([key, value]) => {
-                                if (typeof value !== 'number' || value <= 0) return null;
-                                const label = { houseProperty: 'House Property Loss', businessNonSpeculative: 'Business Loss (Non-Speculative)', businessSpeculative: 'Speculative Business Loss', ltcl: 'Long-Term Capital Loss', stcl: 'Short-Term Capital Loss', raceHorses: 'Loss from Race Horses', unabsorbedDepreciation: 'Unabsorbed Depreciation' }[key] || key;
-                                return ( <tr key={key} className="border-b"><td className="p-2">{label}</td><td className="p-2 text-right">{formatCurrency(value)}</td></tr> );
-                            })}
+                        <tbody>
+                            {newResult.setOffSummary.map((item, index) => (
+                                <tr key={index} className="border-b">
+                                    <td className="p-2">{item.source}</td>
+                                    <td className="p-2">{item.against}</td>
+                                    <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
+                                </tr>
+                            ))}
                         </tbody>
-                     </table>
+                    </table>
                 </Card>
-            }
-            {anyLossesToCarryForwardNew && 
-                <Card title="Losses to be Carried Forward (New Regime)">
-                     <table className="w-full text-sm">
-                        <thead className="bg-gray-200 text-gray-700">
-                            <tr>
-                                <th className="p-2 text-left">Loss Type</th>
-                                <th className="p-2 text-right">Amount (₹)</th>
-                            </tr>
-                        </thead>
-                         <tbody>
-                            {Object.entries(newResult.lossesCarriedForward).map(([key, value]) => {
-                                if (typeof value !== 'number' || value <= 0) return null;
-                                const label = { houseProperty: 'House Property Loss', businessNonSpeculative: 'Business Loss (Non-Speculative)', businessSpeculative: 'Speculative Business Loss', ltcl: 'Long-Term Capital Loss', stcl: 'Short-Term Capital Loss', raceHorses: 'Loss from Race Horses', unabsorbedDepreciation: 'Unabsorbed Depreciation' }[key] || key;
-                                return ( <tr key={key} className="border-b"><td className="p-2">{label}</td><td className="p-2 text-right">{formatCurrency(value)}</td></tr> );
-                            })}
-                        </tbody>
-                     </table>
-                </Card>
-            }
+                }
+                {anyLossesToCarryForwardOld && 
+                    <Card title="Losses to be Carried Forward (Old Regime)" className="card-for-print">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-200 text-gray-700">
+                                <tr>
+                                    <th className="p-2 text-left">Loss Type</th>
+                                    <th className="p-2 text-right">Amount (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.entries(oldResult.lossesCarriedForward).map(([key, value]) => {
+                                    if (typeof value !== 'number' || value <= 0) return null;
+                                    const label = { houseProperty: 'House Property Loss', businessNonSpeculative: 'Business Loss (Non-Speculative)', businessSpeculative: 'Speculative Business Loss', ltcl: 'Long-Term Capital Loss', stcl: 'Short-Term Capital Loss', raceHorses: 'Loss from Race Horses', unabsorbedDepreciation: 'Unabsorbed Depreciation' }[key] || key;
+                                    return ( <tr key={key} className="border-b"><td className="p-2">{label}</td><td className="p-2 text-right">{formatCurrency(value)}</td></tr> );
+                                })}
+                            </tbody>
+                        </table>
+                    </Card>
+                }
+                {anyLossesToCarryForwardNew && 
+                    <Card title="Losses to be Carried Forward (New Regime)" className="card-for-print">
+                        <table className="w-full text-sm">
+                            <thead className="bg-gray-200 text-gray-700">
+                                <tr>
+                                    <th className="p-2 text-left">Loss Type</th>
+                                    <th className="p-2 text-right">Amount (₹)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {Object.entries(newResult.lossesCarriedForward).map(([key, value]) => {
+                                    if (typeof value !== 'number' || value <= 0) return null;
+                                    const label = { houseProperty: 'House Property Loss', businessNonSpeculative: 'Business Loss (Non-Speculative)', businessSpeculative: 'Speculative Business Loss', ltcl: 'Long-Term Capital Loss', stcl: 'Short-Term Capital Loss', raceHorses: 'Loss from Race Horses', unabsorbedDepreciation: 'Unabsorbed Depreciation' }[key] || key;
+                                    return ( <tr key={key} className="border-b"><td className="p-2">{label}</td><td className="p-2 text-right">{formatCurrency(value)}</td></tr> );
+                                })}
+                            </tbody>
+                        </table>
+                    </Card>
+                }
+            </div>
         </>);
     }
 
@@ -572,127 +618,144 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
     const anyLossesToCarryForward = Object.values(result.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
 
     return (<>
-    <Card title={`Computation Summary (${data.taxRegime} Regime)`}>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-200 text-gray-700">
-              <th className="p-2 text-left">Particulars</th>
-              <th className="p-2 text-right">Amount (₹)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.interestCalc.incomeAsPerEarlierAssessment != null && (
-                <Row label="Income as per Earlier Assessment" amount={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
-            )}
-            {renderIncomeHead("Income from Salary", result.breakdown.income.salary)}
-            {(result.breakdown.nav > 0 || result.breakdown.income.houseProperty.assessed !== 0) &&
-                <>
-                    <Row label="&nbsp;&nbsp;Net Annual Value (NAV)" amount={result.breakdown.nav} />
-                    <Row label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" amount={result.breakdown.standardDeduction24a} isNegative />
-                </>
-            }
-            {renderIncomeHead("Income from House Property", result.breakdown.income.houseProperty)}
-            {renderIncomeHead("Profits and Gains of Business or Profession", result.breakdown.income.pgbp)}
-            {renderIncomeHead("Capital Gains", result.breakdown.income.capitalGains)}
-            {renderIncomeHead("Income from Other Sources", result.breakdown.income.otherSources)}
-            { result.breakdown.income.international.netIncomeAdded > 0 &&
-                <Row label="International Income" amount={result.breakdown.income.international.netIncomeAdded} isBold />
-            }
-            {renderIncomeHead("Winnings from Lottery, etc.", result.breakdown.income.winnings)}
-            {result.breakdown.income.deemed > 0 && <Row label="Deemed Income (Sec 68-69D)" amount={result.breakdown.income.deemed} isBold isAccent />}
-            <Row label="Gross Total Income" amount={result.grossTotalIncome} isBold isAccent />
-            {result.totalDeductions > 0 &&
-                <Row label="Add: Disallowed Deductions under Chapter VI-A" amount={result.totalDeductions} />
-            }
-            <Row label="Net Taxable Income" amount={result.netTaxableIncome} isBold isAccent />
-            
-            <Row label="Tax on Total Income (before Surcharge)" amount={result.taxLiability} />
-            {result.breakdown.surchargeBreakdown?.onOtherIncomeGross > 0 && (
-                <Row label="Add: Surcharge on Other Income" amount={result.breakdown.surchargeBreakdown.onOtherIncomeGross} />
-            )}
-            {result.breakdown.surchargeBreakdown?.onDeemedIncome > 0 && (
-                <Row label="Add: Surcharge on Deemed Income" amount={result.breakdown.surchargeBreakdown.onDeemedIncome} />
-            )}
-            {result.marginalRelief > 0 && <Row label="Less: Marginal Relief" amount={result.marginalRelief} isNegative />}
-            {(result.breakdown.surchargeBreakdown?.onOtherIncomeGross > 0 || result.breakdown.surchargeBreakdown?.onDeemedIncome > 0) &&
-              <Row label="Tax and Surcharge" amount={result.taxLiability + result.surcharge} isBold />
-            }
-            
-            {result.rebate87A > 0 && <Row label="Less: Rebate u/s 87A" amount={result.rebate87A} isNegative />}
-            <Row label="Health & Education Cess" amount={result.healthAndEducationCess} />
-            <Row label="Total Tax Liability" amount={result.totalTaxPayable} isBold isAccent/>
-            {result.relief > 0 && <Row label="Less: Reliefs (FTC)" amount={result.relief} isNegative />}
-            
-            <Row label={<>Interest u/s 234A <span className="text-gray-500 text-xs">({result.interest.months_234A} mos)</span></>} amount={result.interest.u_s_234A} />
-            <Row label={<>Interest u/s 234B <span className="text-gray-500 text-xs">({result.interest.months_234B} mos)</span></>} amount={result.interest.u_s_234B} />
-            <Row label={<>Interest u/s 234C <span className="text-gray-500 text-xs">{format234CMonths(result.interest.months_234C)}</span></>} amount={result.interest.u_s_234C} />
-            <Row label="Total Interest" amount={result.interest.totalInterest} isBold isAccent />
-            <Row label="Less: TDS / TCS" amount={data.tds ?? 0} isNegative />
-            <Row label="Less: Advance Tax" amount={data.advanceTax ?? 0} isNegative />
-            <tr className="font-bold text-lg bg-blue-100">
-              <td className="p-3 text-left">{result.netPayable >= 0 ? 'Net Tax Payable' : 'Refund Due'}</td>
-              <td className="p-3 text-right">{formatCurrency(Math.abs(result.netPayable))}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </Card>
-
-    {result.setOffSummary.length > 0 &&
-      <Card title="Loss Set-Off Details">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-200 text-gray-700">
-                <tr>
-                    <th className="p-2 text-left">Loss Source</th>
-                    <th className="p-2 text-left">Set-off Against</th>
-                    <th className="p-2 text-right">Amount (₹)</th>
+     <div className="flex justify-end mb-4 no-print">
+        <button onClick={handlePrint} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 4v3H4a2 2 0 00-2 2v3a2 2 0 002 2h1v3a2 2 0 002 2h6a2 2 0 002-2v-3h1a2 2 0 002-2V9a2 2 0 00-2-2h-1V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm8 0H7v3h6V4zm0 8H7v4h6v-4z" clipRule="evenodd" /></svg>
+            Export to PDF
+        </button>
+    </div>
+    <div id="printable-area">
+        <div className="print-only">
+            <h2 className="text-2xl font-bold mb-2">Computation of Total Income</h2>
+            <div className="grid grid-cols-3 gap-4 text-sm mb-4">
+                <div><strong>Assessee:</strong> {data.assesseeName}</div>
+                <div><strong>PAN:</strong> {data.pan}</div>
+                <div><strong>Assessment Year:</strong> {data.assessmentYear}</div>
+            </div>
+        </div>
+        <Card title={`Computation Summary (${data.taxRegime} Regime)`} className="card-for-print">
+        <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+            <thead>
+                <tr className="bg-gray-200 text-gray-700">
+                <th className="p-2 text-left">Particulars</th>
+                <th className="p-2 text-right">Amount (₹)</th>
                 </tr>
             </thead>
             <tbody>
-                {result.setOffSummary.map((item, index) => (
-                    <tr key={index} className="border-b">
-                        <td className="p-2">{item.source}</td>
-                        <td className="p-2">{item.against}</td>
-                        <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
-                    </tr>
-                ))}
+                {data.interestCalc.incomeAsPerEarlierAssessment != null && (
+                    <Row label="Income as per Earlier Assessment" amount={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
+                )}
+                {renderIncomeHead("Income from Salary", result.breakdown.income.salary)}
+                {(result.breakdown.nav > 0 || result.breakdown.income.houseProperty.assessed !== 0) &&
+                    <>
+                        <Row label="&nbsp;&nbsp;Net Annual Value (NAV)" amount={result.breakdown.nav} />
+                        <Row label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" amount={result.breakdown.standardDeduction24a} isNegative />
+                    </>
+                }
+                {renderIncomeHead("Income from House Property", result.breakdown.income.houseProperty)}
+                {renderIncomeHead("Profits and Gains of Business or Profession", result.breakdown.income.pgbp)}
+                {renderIncomeHead("Capital Gains", result.breakdown.income.capitalGains)}
+                {renderIncomeHead("Income from Other Sources", result.breakdown.income.otherSources)}
+                { result.breakdown.income.international.netIncomeAdded > 0 &&
+                    <Row label="International Income" amount={result.breakdown.income.international.netIncomeAdded} isBold />
+                }
+                {renderIncomeHead("Winnings from Lottery, etc.", result.breakdown.income.winnings)}
+                {result.breakdown.income.deemed > 0 && <Row label="Deemed Income (Sec 68-69D)" amount={result.breakdown.income.deemed} isBold isAccent />}
+                <Row label="Gross Total Income" amount={result.grossTotalIncome} isBold isAccent />
+                {result.totalDeductions > 0 &&
+                    <Row label="Add: Disallowed Deductions under Chapter VI-A" amount={result.totalDeductions} />
+                }
+                <Row label="Net Taxable Income" amount={result.netTaxableIncome} isBold isAccent />
+                
+                <Row label="Tax on Total Income (before Surcharge)" amount={result.taxLiability} />
+                {result.breakdown.surchargeBreakdown?.onOtherIncomeGross > 0 && (
+                    <Row label="Add: Surcharge on Other Income" amount={result.breakdown.surchargeBreakdown.onOtherIncomeGross} />
+                )}
+                {result.breakdown.surchargeBreakdown?.onDeemedIncome > 0 && (
+                    <Row label="Add: Surcharge on Deemed Income" amount={result.breakdown.surchargeBreakdown.onDeemedIncome} />
+                )}
+                {result.marginalRelief > 0 && <Row label="Less: Marginal Relief" amount={result.marginalRelief} isNegative />}
+                {(result.breakdown.surchargeBreakdown?.onOtherIncomeGross > 0 || result.breakdown.surchargeBreakdown?.onDeemedIncome > 0) &&
+                <Row label="Tax and Surcharge" amount={result.taxLiability + result.surcharge} isBold />
+                }
+                
+                {result.rebate87A > 0 && <Row label="Less: Rebate u/s 87A" amount={result.rebate87A} isNegative />}
+                <Row label="Health & Education Cess" amount={result.healthAndEducationCess} />
+                <Row label="Total Tax Liability (before FTC)" amount={result.totalTaxPayable + result.relief} isBold isAccent/>
+                {result.relief > 0 && <Row label="Less: Reliefs (FTC)" amount={result.relief} isNegative />}
+                <Row label="Final Tax Liability" amount={result.totalTaxPayable} isBold isAccent/>
+
+                <Row label={<>Interest u/s 234A <span className="text-gray-500 text-xs">({result.interest.months_234A} mos)</span></>} amount={result.interest.u_s_234A} />
+                <Row label={<>Interest u/s 234B <span className="text-gray-500 text-xs">({result.interest.months_234B} mos)</span></>} amount={result.interest.u_s_234B} />
+                <Row label={<>Interest u/s 234C <span className="text-gray-500 text-xs">{format234CMonths(result.interest.months_234C)}</span></>} amount={result.interest.u_s_234C} />
+                <Row label="Total Interest" amount={result.interest.totalInterest} isBold isAccent />
+                <Row label="Less: TDS / TCS" amount={data.tds ?? 0} isNegative />
+                <Row label="Less: Advance Tax" amount={data.advanceTax ?? 0} isNegative />
+                <tr className="font-bold text-lg bg-blue-100">
+                <td className="p-3 text-left">{result.netPayable >= 0 ? 'Net Tax Payable' : 'Refund Due'}</td>
+                <td className="p-3 text-right">{formatCurrency(Math.abs(result.netPayable))}</td>
+                </tr>
             </tbody>
-          </table>
-      </Card>
-    }
-    {anyLossesToCarryForward && 
-        <Card title="Losses to be Carried Forward">
-             <table className="w-full text-sm">
+            </table>
+        </div>
+        </Card>
+
+        {result.setOffSummary.length > 0 &&
+        <Card title="Loss Set-Off Details" className="card-for-print">
+            <table className="w-full text-sm">
                 <thead className="bg-gray-200 text-gray-700">
                     <tr>
-                        <th className="p-2 text-left">Loss Type</th>
+                        <th className="p-2 text-left">Loss Source</th>
+                        <th className="p-2 text-left">Set-off Against</th>
                         <th className="p-2 text-right">Amount (₹)</th>
                     </tr>
                 </thead>
-                 <tbody>
-                    {Object.entries(result.lossesCarriedForward).map(([key, value]) => {
-                        if (typeof value !== 'number' || value <= 0) return null;
-                        const label = {
-                            houseProperty: 'House Property Loss',
-                            businessNonSpeculative: 'Business Loss (Non-Speculative)',
-                            businessSpeculative: 'Speculative Business Loss',
-                            ltcl: 'Long-Term Capital Loss',
-                            stcl: 'Short-Term Capital Loss',
-                            raceHorses: 'Loss from Race Horses',
-                            unabsorbedDepreciation: 'Unabsorbed Depreciation',
-                        }[key] || key;
-                        return (
-                            <tr key={key} className="border-b">
-                                <td className="p-2">{label}</td>
-                                <td className="p-2 text-right">{formatCurrency(value)}</td>
-                            </tr>
-                        );
-                    })}
+                <tbody>
+                    {result.setOffSummary.map((item, index) => (
+                        <tr key={index} className="border-b">
+                            <td className="p-2">{item.source}</td>
+                            <td className="p-2">{item.against}</td>
+                            <td className="p-2 text-right">{formatCurrency(item.amount)}</td>
+                        </tr>
+                    ))}
                 </tbody>
-             </table>
+            </table>
         </Card>
-    }
+        }
+        {anyLossesToCarryForward && 
+            <Card title="Losses to be Carried Forward" className="card-for-print">
+                <table className="w-full text-sm">
+                    <thead className="bg-gray-200 text-gray-700">
+                        <tr>
+                            <th className="p-2 text-left">Loss Type</th>
+                            <th className="p-2 text-right">Amount (₹)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.entries(result.lossesCarriedForward).map(([key, value]) => {
+                            if (typeof value !== 'number' || value <= 0) return null;
+                            const label = {
+                                houseProperty: 'House Property Loss',
+                                businessNonSpeculative: 'Business Loss (Non-Speculative)',
+                                businessSpeculative: 'Speculative Business Loss',
+                                ltcl: 'Long-Term Capital Loss',
+                                stcl: 'Short-Term Capital Loss',
+                                raceHorses: 'Loss from Race Horses',
+                                unabsorbedDepreciation: 'Unabsorbed Depreciation',
+                            }[key] || key;
+                            return (
+                                <tr key={key} className="border-b">
+                                    <td className="p-2">{label}</td>
+                                    <td className="p-2 text-right">{formatCurrency(value)}</td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </Card>
+        }
+    </div>
     </>
   );
 };
@@ -765,6 +828,14 @@ export default function App() {
         return (<>
           <Card title="Taxpayer Profile">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+               <div>
+                 <label className="block text-gray-600 font-medium text-sm mb-1">Name of Assessee</label>
+                 <input type="text" value={taxData.assesseeName} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'assesseeName', value: e.target.value}})} className="w-full p-2 border rounded-md" />
+               </div>
+               <div>
+                 <label className="block text-gray-600 font-medium text-sm mb-1">PAN</label>
+                 <input type="text" value={taxData.pan} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'pan', value: e.target.value.toUpperCase()}})} className="w-full p-2 border rounded-md uppercase" maxLength={10} />
+               </div>
                <div>
                  <label className="block text-gray-600 font-medium text-sm mb-1">Taxpayer Type</label>
                  <select value={taxData.taxpayerType} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'taxpayerType', value: e.target.value}})} className="w-full p-2 border rounded-md capitalize">
@@ -1195,7 +1266,20 @@ export default function App() {
                   <IncomeTableRow label="LTCG (Sec 112A)" path="capitalGains.ltcg112A" value={taxData.capitalGains.ltcg112A} dispatch={dispatch} helpText="Taxable @ 10% > 1 Lakh"/>
                   <IncomeTableRow label="LTCG (Other)" path="capitalGains.ltcgOther" value={taxData.capitalGains.ltcgOther} dispatch={dispatch} helpText="Taxable @ 20%"/>
                   <IncomeTableRow label="Deemed Gain (Sec 50C)" path="capitalGains.adjustment50C" value={taxData.capitalGains.adjustment50C} dispatch={dispatch} />
-                  <IncomeTableRow label="Exemption (Sec 54 series)" path="capitalGains.exemptions54" value={taxData.capitalGains.exemptions54} dispatch={dispatch} />
+                  <IncomeTableRow label="Deemed STCG on Depreciable Assets (Sec 50)" path="capitalGains.adjustment50" value={taxData.capitalGains.adjustment50} dispatch={dispatch} />
+                  <IncomeTableRow label="Deemed Gain (Sec 50CA - Unlisted Shares)" path="capitalGains.adjustment50CA" value={taxData.capitalGains.adjustment50CA} dispatch={dispatch} />
+                  <IncomeTableRow label="Deemed Gain (Sec 50D - Indeterminable Consideration)" path="capitalGains.adjustment50D" value={taxData.capitalGains.adjustment50D} dispatch={dispatch} />
+                  <IncomeTableRow label="Deemed Business Income (Sec 43CA - Stock-in-Trade)" path="capitalGains.adjustment43CA" value={taxData.capitalGains.adjustment43CA} dispatch={dispatch} helpText="Note: This is taxed under PGBP but entered here for convenience." />
+                  <IncomeTableRow label="Disallowed Cost of Improvement" path="capitalGains.costOfImprovement" value={taxData.capitalGains.costOfImprovement} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54" path="capitalGains.exemption54" value={taxData.capitalGains.exemption54} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54B" path="capitalGains.exemption54B" value={taxData.capitalGains.exemption54B} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54D" path="capitalGains.exemption54D" value={taxData.capitalGains.exemption54D} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54EC" path="capitalGains.exemption54EC" value={taxData.capitalGains.exemption54EC} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54EE" path="capitalGains.exemption54EE" value={taxData.capitalGains.exemption54EE} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54F" path="capitalGains.exemption54F" value={taxData.capitalGains.exemption54F} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54G" path="capitalGains.exemption54G" value={taxData.capitalGains.exemption54G} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54GA" path="capitalGains.exemption54GA" value={taxData.capitalGains.exemption54GA} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54GB" path="capitalGains.exemption54GB" value={taxData.capitalGains.exemption54GB} dispatch={dispatch} />
               </tbody>
             </table>
       </Card>;
@@ -1304,104 +1388,110 @@ export default function App() {
         }
 
         const natureOptions = [
-            { value: InternationalIncomeNature.Salary, label: "Salary earned abroad" },
-            { value: InternationalIncomeNature.Interest, label: "Interest from foreign deposits / bonds" },
-            { value: InternationalIncomeNature.Dividend, label: "Dividend from foreign company" },
-            { value: InternationalIncomeNature.RoyaltyFTS, label: "Royalty or Fees for Technical Services" },
-            { value: InternationalIncomeNature.BusinessIncome, label: "Business or Professional income" },
-            { value: InternationalIncomeNature.CapitalGains, label: "Capital Gains on foreign assets" },
-            { value: InternationalIncomeNature.OtherIncome, label: "Other incomes (rent, pension, etc.)" },
+            { value: InternationalIncomeNature.Salary, label: "Salary" },
+            { value: InternationalIncomeNature.Interest, label: "Interest" },
+            { value: InternationalIncomeNature.Dividend, label: "Dividend" },
+            { value: InternationalIncomeNature.RoyaltyFTS, label: "Royalty/FTS" },
+            { value: InternationalIncomeNature.BusinessIncome, label: "Business Income" },
+            { value: InternationalIncomeNature.CapitalGains, label: "Capital Gains" },
+            { value: InternationalIncomeNature.OtherIncome, label: "Other Income" },
+        ];
+        
+        const complianceStatusOptions = [
+            { value: ComplianceStatus.Compliant, label: "Compliant" },
+            { value: ComplianceStatus.NotApplicable, label: "Not Applicable" },
+            { value: ComplianceStatus.DeviationFound, label: "Deviation Found" },
+            { value: ComplianceStatus.NotFiled, label: "Form 3CEB Not Filed" },
         ];
 
+
         return (
-            <Card title="International Income & Foreign Tax Credit (FTC)">
-                {internationalIncome.map((item, index) => {
-                    const itemResult = intlResult.itemized.find(r => r.id === item.id);
-                    return (
-                        <div key={item.id} className="p-4 border rounded-lg mb-4 bg-gray-50 relative">
-                            <button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="absolute top-2 right-2 text-red-500 hover:text-red-700 font-bold text-xl" aria-label="Remove Foreign Income Item">&times;</button>
-                            <h3 className="font-semibold text-lg mb-4">Foreign Income Item #{index + 1}</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-medium">Nature of Income</label>
-                                    <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-2 border rounded-md">
-                                        {natureOptions.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Applicable Special Section</label>
-                                    <select value={item.specialSection} onChange={e => handleUpdate(item.id, 'specialSection', e.target.value)} className="w-full p-2 border rounded-md">
-                                        <option value="None">None (Taxed at Normal Rates)</option>
-                                        <option value="115A">115A (Div, Int, Royalty, FTS)</option>
-                                        <option value="115AB">115AB (Offshore Fund Units)</option>
-                                        <option value="115AC">115AC (GDR/FCCB Income - Non-res)</option>
-                                        <option value="115ACA">115ACA (GDR Income - Resident)</option>
-                                        <option value="115AD">115AD (FII/FPI Income)</option>
-                                        <option value="115AE">115AE (Specified Fund Units)</option>
-                                        <option value="115BBA">115BBA (Sports persons / Entertainers)</option>
-                                    </select>
-                                </div>
-                                <div><label className="text-sm font-medium">Income in INR (Rule 115)</label><input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md" /></div>
-                                <div><label className="text-sm font-medium">Foreign Tax Paid in INR</label><input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md" /></div>
-                            </div>
-
-                            {item.nature === InternationalIncomeNature.CapitalGains && <div className="mt-4"><label className="flex items-center"><input type="checkbox" checked={item.isLTCG} onChange={e => handleUpdate(item.id, 'isLTCG', e.target.checked)} className="mr-2" /> Is this Long-Term Capital Gain?</label></div>}
-
-                            <div className="mt-4 border-t pt-4">
-                                <h4 className="font-semibold text-gray-700 mb-2">DTAA / Foreign Tax Credit</h4>
-                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="flex items-center gap-4">
-                                        <label className="text-sm font-medium">Form 67 Filed?</label>
-                                        <div className="flex items-center p-1 bg-white border rounded-full">
-                                            <button onClick={() => handleUpdate(item.id, 'form67Filed', true)} className={`px-3 py-1 text-sm rounded-full ${item.form67Filed ? 'bg-blue-600 text-white' : 'bg-transparent text-gray-600'}`}>Yes</button>
-                                            <button onClick={() => handleUpdate(item.id, 'form67Filed', false)} className={`px-3 py-1 text-sm rounded-full ${!item.form67Filed ? 'bg-gray-300 text-gray-800' : 'bg-transparent text-gray-600'}`}>No</button>
-                                        </div>
-                                        {!item.form67Filed && <p className="text-xs text-red-600 mt-1">DTAA benefits & FTC will be denied.</p>}
-                                    </div>
-                                    <div>
-                                         <label className="flex items-center mt-6">
-                                            <input type="checkbox" checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="mr-2 h-4 w-4" disabled={!item.form67Filed} /> DTAA is applicable
-                                         </label>
-                                    </div>
-                                 </div>
-                                 {item.dtaaApplicable && item.form67Filed && <div className="grid grid-cols-2 gap-4 mt-2">
-                                     <div><label className="text-sm font-medium">Applicable Article (auto-detected)</label><input type="text" value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} className="w-full p-2 border rounded-md" /></div>
-                                     <div><label className="text-sm font-medium">Tax Rate as per DTAA (%)</label><input type="number" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} className="w-full p-2 border rounded-md" /></div>
-                                 </div>}
-                            </div>
-
-                            {item.nature === InternationalIncomeNature.BusinessIncome && <div className="mt-4 border-t pt-4">
-                                <h4 className="font-semibold text-gray-700 mb-2">Transfer Pricing Compliance (Sec 92)</h4>
-                                <label className="flex items-center mb-2"><input type="checkbox" checked={item.transferPricing.isAssociatedEnterprise} onChange={e => handleUpdate(item.id, 'transferPricing.isAssociatedEnterprise', e.target.checked)} className="mr-2" /> Transaction with Associated Enterprise</label>
-                                {item.transferPricing.isAssociatedEnterprise && <div className="grid grid-cols-2 gap-4">
-                                    <div><label className="text-sm font-medium">Arm's Length Price (ALP) in INR</label><input type="text" value={formatInputValue(item.transferPricing.armsLengthPrice)} onChange={e => handleUpdate(item.id, 'transferPricing.armsLengthPrice', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md" /></div>
-                                    <div><label className="text-sm font-medium">Form 3CEB Status</label><select value={item.transferPricing.form3CEBStatus} onChange={e => handleUpdate(item.id, 'transferPricing.form3CEBStatus', e.target.value)} className="w-full p-2 border rounded-md"><option value={ComplianceStatus.NotApplicable}>Not Applicable</option><option value={ComplianceStatus.Compliant}>Compliant</option><option value={ComplianceStatus.DeviationFound}>Deviation Found</option><option value={ComplianceStatus.NotFiled}>Not Filed</option></select></div>
-                                </div>}
-                            </div>}
-
-                            {itemResult && (
-                                <div className="mt-4 border-t pt-4">
-                                    <h4 className="font-semibold text-gray-700 mb-2">AO Computation for this item</h4>
-                                    <div className="space-y-1 p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
-                                        <div className="flex justify-between"><span>Applicable Tax Rate:</span> <span className="font-mono">{ (itemResult.applicableRate * 100).toFixed(2) }%</span></div>
-                                        <div className="flex justify-between"><span>Indian Tax Computed:</span> <span className="font-mono">₹ {formatCurrency(itemResult.indianTax)}</span></div>
-                                        <div className="flex justify-between"><span>Foreign Tax Credit (FTC) Allowed:</span> <span className="font-mono">₹ {formatCurrency(itemResult.ftcAllowed)}</span></div>
-                                        <div className="flex justify-between font-bold border-t border-gray-400 pt-1 mt-1"><span>Net Indian Tax Payable:</span> <span className="font-mono">₹ {formatCurrency(itemResult.netTax)}</span></div>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-                <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Foreign Income Source</button>
+            <Card title="International Income & Foreign Tax Credit (FTC) - Form 67">
+                <div className="overflow-x-auto">
+                    <table className="w-full min-w-[1400px] text-sm">
+                        <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
+                            <tr>
+                                <th className="p-2 text-left font-semibold">Country</th>
+                                <th className="p-2 text-left font-semibold">Nature of Income</th>
+                                <th className="p-2 text-left font-semibold">Income (INR)</th>
+                                <th className="p-2 text-left font-semibold">Foreign Tax Paid (INR)</th>
+                                <th className="p-2 text-center font-semibold whitespace-nowrap">Form 67 Filed?</th>
+                                <th className="p-2 text-center font-semibold whitespace-nowrap">DTAA Applicable?</th>
+                                <th className="p-2 text-left font-semibold">DTAA Article</th>
+                                <th className="p-2 text-left font-semibold">DTAA Rate (%)</th>
+                                <th className="p-2 text-right font-semibold">Indian Tax</th>
+                                <th className="p-2 text-right font-semibold">Total FTC</th>
+                                <th className="p-2 text-center font-semibold">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {internationalIncome.map((item) => {
+                                const itemResult = intlResult.itemized.find(r => r.id === item.id);
+                                return (
+                                    <React.Fragment key={item.id}>
+                                        <tr className="border-b align-top">
+                                            <td className="p-2"><input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
+                                            <td className="p-2">
+                                                <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-2 border rounded-md min-w-[150px]">
+                                                    {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                </select>
+                                            </td>
+                                            <td className="p-2"><input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
+                                            <td className="p-2"><input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md min-w-[120px]" /></td>
+                                            <td className="p-2 text-center"><input type="checkbox" checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4 mt-3" /></td>
+                                            <td className="p-2 text-center"><input type="checkbox" checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4 mt-3" /></td>
+                                            <td className="p-2"><input type="text" value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} disabled={!item.dtaaApplicable} className="w-full p-2 border rounded-md disabled:bg-gray-200 min-w-[80px]" /></td>
+                                            <td className="p-2"><input type="number" step="0.01" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} disabled={!item.dtaaApplicable} className="w-full p-2 border rounded-md disabled:bg-gray-200 min-w-[80px]" /></td>
+                                            <td className="p-2 text-right pt-3 font-mono">{itemResult ? formatCurrency(itemResult.indianTax) : '...'}</td>
+                                            <td className="p-2 text-right pt-3 font-mono font-bold">{itemResult ? formatCurrency(itemResult.totalFtc) : '...'}</td>
+                                            <td className="p-2 text-center"><button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-2 text-xl" aria-label="Remove Foreign Income Item">&times;</button></td>
+                                        </tr>
+                                        {item.nature === InternationalIncomeNature.CapitalGains && (
+                                            <tr className="bg-gray-50 border-b">
+                                                <td colSpan={11} className="p-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <input type="checkbox" checked={item.isLTCG} onChange={e => handleUpdate(item.id, 'isLTCG', e.target.checked)} className="h-4 w-4" id={`isLTCG-${item.id}`} />
+                                                        <label htmlFor={`isLTCG-${item.id}`} className="font-medium text-sm">Is this Long-Term Capital Gain?</label>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                        {item.nature === InternationalIncomeNature.BusinessIncome && (
+                                            <tr className="bg-gray-50 border-b">
+                                                <td colSpan={11} className="p-3">
+                                                    <div className="flex items-center gap-6">
+                                                        <span className="font-semibold text-sm">Transfer Pricing:</span>
+                                                        <div className="flex items-center gap-2">
+                                                          <input type="checkbox" checked={item.transferPricing.isAssociatedEnterprise} onChange={e => handleUpdate(item.id, 'transferPricing.isAssociatedEnterprise', e.target.checked)} className="h-4 w-4" id={`isAE-${item.id}`} />
+                                                          <label htmlFor={`isAE-${item.id}`} className="text-sm">Involves Associated Enterprise?</label>
+                                                        </div>
+                                                        <div className={`flex items-center gap-2 ${!item.transferPricing.isAssociatedEnterprise && 'opacity-50'}`}>
+                                                            <label htmlFor={`alp-${item.id}`} className="text-sm">Arm's Length Price (ALP):</label>
+                                                            <input type="text" id={`alp-${item.id}`} disabled={!item.transferPricing.isAssociatedEnterprise} value={formatInputValue(item.transferPricing.armsLengthPrice)} onChange={e => handleUpdate(item.id, 'transferPricing.armsLengthPrice', parseFormattedValue(e.target.value))} className="p-1 border rounded-md" />
+                                                        </div>
+                                                        <div className={`flex items-center gap-2 ${!item.transferPricing.isAssociatedEnterprise && 'opacity-50'}`}>
+                                                            <label htmlFor={`form3ceb-${item.id}`} className="text-sm">Form 3CEB Status:</label>
+                                                            <select id={`form3ceb-${item.id}`} disabled={!item.transferPricing.isAssociatedEnterprise} value={item.transferPricing.form3CEBStatus} onChange={e => handleUpdate(item.id, 'transferPricing.form3CEBStatus', e.target.value)} className="p-1 border rounded-md text-sm">
+                                                              {complianceStatusOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+                <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Foreign Income Source</button>
                 <div className="mt-6 border-t pt-4">
                     <h3 className="font-semibold text-lg mb-2 text-gray-800">Total International Income Summary</h3>
                     <div className="space-y-2 p-4 bg-gray-100 rounded-lg">
                          <div className="flex justify-between font-semibold"><span>Total Net Foreign Income Added</span><span className="font-mono">₹ {formatCurrency(intlResult.netIncomeAdded)}</span></div>
                          <div className="flex justify-between"><span>Total Indian Tax on Foreign Income</span><span className="font-mono">₹ {formatCurrency(intlResult.taxOnIncome)}</span></div>
-                         <div className="flex justify-between font-bold text-green-700"><span>Total Foreign Tax Credit (FTC) Allowed</span><span className="font-mono">₹ {formatCurrency(intlResult.ftcAllowed)}</span></div>
+                         <div className="flex justify-between font-bold text-green-700"><span>Total Foreign Tax Credit (FTC) Allowed</span><span className="font-mono">₹ {formatCurrency(intlResult.totalFtcAllowed)}</span></div>
                     </div>
                 </div>
             </Card>
@@ -1591,7 +1681,7 @@ export default function App() {
 
   return (
     <div className="bg-gray-100 min-h-screen">
-      <header className="bg-gray-800 text-white shadow-md">
+      <header className="bg-gray-800 text-white shadow-md no-print">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">
             <h1 className="text-2xl font-bold">AO Tax Tool</h1>
              <div className="flex items-center gap-4">
@@ -1611,7 +1701,7 @@ export default function App() {
         </div>
       </header>
 
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 no-print">
           <nav className="container mx-auto px-2 -mb-px flex space-x-1 sm:space-x-4 overflow-x-auto">
               {dynamicTabs.map(tab => (
                   <button

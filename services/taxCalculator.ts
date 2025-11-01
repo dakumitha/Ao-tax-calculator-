@@ -377,6 +377,10 @@ export function calculateTax(data: TaxData): ComputationResult {
           break;
   }
   
+  // Add deemed business income from Sec 43CA (entered under CG for convenience)
+  const adjustment43CA = getTaxableValue(data.capitalGains.adjustment43CA, residentialStatus, data.pgbp.isControlledFromIndia, 'pgbp');
+  assessedPgbpNonSpeculativeIncome += adjustment43CA;
+
   // --- Calculate Income from Other Sources ---
   const assessedRaceHorseIncome = getTaxableValue(data.otherSources.raceHorseIncome, residentialStatus);
   const assessedOtherIncomes = getTaxableValue(data.otherSources.otherIncomes, residentialStatus);
@@ -479,6 +483,22 @@ export function calculateTax(data: TaxData): ComputationResult {
         }
     });
 
+  const capitalGainsAdditions = 
+    getTaxableValue(data.capitalGains.adjustment50C, residentialStatus) +
+    getTaxableValue(data.capitalGains.adjustment50CA, residentialStatus) +
+    getTaxableValue(data.capitalGains.adjustment50D, residentialStatus) +
+    getTaxableValue(data.capitalGains.costOfImprovement, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54B, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54D, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54EC, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54EE, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54F, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54G, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54GA, residentialStatus) +
+    getTaxableValue(data.capitalGains.exemption54GB, residentialStatus);
+
+  const deemedSTCG50 = getTaxableValue(data.capitalGains.adjustment50, residentialStatus);
 
   // --- Loss Set-off Logic ---
   const incomePool = {
@@ -487,9 +507,9 @@ export function calculateTax(data: TaxData): ComputationResult {
     pgbpNonSpeculative: Math.max(0, assessedPgbpNonSpeculativeIncome) + foreignSlabIncomePool.pgbp,
     pgbpSpeculative: Math.max(0, assessedSpeculativeIncome),
     stcg111A: getTaxableValue(data.capitalGains.stcg111A, residentialStatus),
-    stcgOther: getTaxableValue(data.capitalGains.stcgOther, residentialStatus) + foreignSlabIncomePool.stcg,
+    stcgOther: getTaxableValue(data.capitalGains.stcgOther, residentialStatus) + foreignSlabIncomePool.stcg + deemedSTCG50,
     ltcg112A: getTaxableValue(data.capitalGains.ltcg112A, residentialStatus),
-    ltcgOther: getTaxableValue(data.capitalGains.ltcgOther, residentialStatus) + foreignSlabIncomePool.ltcg,
+    ltcgOther: getTaxableValue(data.capitalGains.ltcgOther, residentialStatus) + foreignSlabIncomePool.ltcg + capitalGainsAdditions,
     otherSources: totalOtherSourcesAssessed + foreignSlabIncomePool.other,
     raceHorseIncome: Math.max(0, assessedRaceHorseIncome),
     winnings: getTaxableValue(data.otherSources.winnings, residentialStatus),
@@ -577,7 +597,7 @@ export function calculateTax(data: TaxData): ComputationResult {
   used = reduceIncome("BF LTCL", lossPool.broughtForward.ltcl, 'ltcg112A'); lossPool.broughtForward.ltcl -= used;
 
   // --- Gross Total Income after set-off ---
-  const gtiFromCurrentInputs = Object.values(incomePool).reduce((a, b) => a + b, 0) + deemedIncome + netForeignIncomeAdded;
+  const gtiFromCurrentInputs = Object.values(incomePool).reduce((a, b) => a + b, 0) + deemedIncome;
   let grossTotalIncome = gtiFromCurrentInputs;
   if (data.interestCalc.incomeAsPerEarlierAssessment != null) {
       grossTotalIncome += data.interestCalc.incomeAsPerEarlierAssessment;
@@ -620,47 +640,27 @@ export function calculateTax(data: TaxData): ComputationResult {
         break;
   }
 
-  // --- Process International Income (Part 2: Calculate Tax & FTC) ---
+  // --- Process International Income (Part 2: Calculate Tax) ---
   const averageTaxRateOnNormalIncome = normalIncome > 0 ? taxOnNormalIncome / normalIncome : 0;
   let taxOnForeignIncome = 0;
-  let totalFtcAllowed = 0;
-  const itemizedInternationalResults: InternationalIncomeComputation[] = [];
+  const taxedIntlItems: any[] = [];
 
-  processedIntlItems.forEach(item => {
-      const taxPaidInr = item.taxPaidInINR ?? 0;
-      const baseIndianRate = item.isSpecialRate ? item.indianTaxRate : averageTaxRateOnNormalIncome;
-      
-      let finalApplicableRate = baseIndianRate;
-      let taxOnThisItem = item.taxableAmountInr * baseIndianRate;
-      let ftcForThisItem = 0;
+    processedIntlItems.forEach(item => {
+        let finalApplicableRate = 0;
+        if (item.isSpecialRate) {
+            finalApplicableRate = item.indianTaxRate;
+        } else {
+            finalApplicableRate = averageTaxRateOnNormalIncome;
+        }
 
-      // DTAA/FTC relief is only available if Form 67 is filed
-      if (item.form67Filed) {
-          let beneficialRate = baseIndianRate;
-          // Apply more beneficial DTAA rate if applicable
-          if (item.dtaaApplicable && item.taxRateAsPerDtaa != null) {
-              beneficialRate = Math.min(baseIndianRate, item.taxRateAsPerDtaa);
-          }
-          finalApplicableRate = beneficialRate;
-          taxOnThisItem = item.taxableAmountInr * finalApplicableRate;
-
-          // FTC is the lower of tax paid abroad or tax computed on that income in India
-          if (taxPaidInr > 0) {
-              ftcForThisItem = Math.min(taxPaidInr, taxOnThisItem);
-          }
-      }
-
-      taxOnForeignIncome += taxOnThisItem;
-      totalFtcAllowed += ftcForThisItem;
-
-      itemizedInternationalResults.push({
-          id: item.id,
-          indianTax: taxOnThisItem,
-          ftcAllowed: ftcForThisItem,
-          netTax: taxOnThisItem - ftcForThisItem,
-          applicableRate: finalApplicableRate,
-      });
-  });
+        if (item.form67Filed && item.dtaaApplicable && item.taxRateAsPerDtaa != null) {
+            finalApplicableRate = Math.min(finalApplicableRate, item.taxRateAsPerDtaa);
+        }
+        
+        const taxOnThisItem = item.taxableAmountInr * finalApplicableRate;
+        taxOnForeignIncome += taxOnThisItem;
+        taxedIntlItems.push({ ...item, taxOnThisItem, finalApplicableRate });
+    });
 
   const taxOnOtherIncomes = taxOnNormalIncome + taxOnSTCG111A + taxOnLTCG112A + taxOnLTCGOther + taxOnWinnings + taxOnForeignIncome;
   const baseTaxBeforeSurcharge = taxOnOtherIncomes + taxOnDeemedIncomeRaw;
@@ -745,10 +745,42 @@ export function calculateTax(data: TaxData): ComputationResult {
   
   const taxAfterRebate = Math.max(0, taxBeforeRebateAndCess - rebate87A);
   const healthAndEducationCess = taxAfterRebate * yearConfig.TAX_RATES.CESS;
-  const totalTaxLiability = taxAfterRebate + healthAndEducationCess;
+  const totalTaxPayableBeforeRelief = taxAfterRebate + healthAndEducationCess;
+
+  // --- Process International Income (Part 3: Calculate FTC) ---
+  const averageRate = netTaxableIncome > 0 ? totalTaxPayableBeforeRelief / netTaxableIncome : 0;
+  let totalFtcAllowed = 0;
+  const itemizedInternationalResults: InternationalIncomeComputation[] = [];
+  
+  taxedIntlItems.forEach(item => {
+      const taxPaidInr = item.taxPaidInINR ?? 0;
+      let ftc90_90A = 0, ftc91 = 0;
+
+      if (item.form67Filed) {
+          if (item.dtaaApplicable) { // Sec 90/90A
+              ftc90_90A = Math.min(taxPaidInr, item.taxOnThisItem);
+          } else { // Sec 91
+              const indianTaxOnThisItemAtAvgRate = item.taxableAmountInr * averageRate;
+              ftc91 = Math.min(taxPaidInr, indianTaxOnThisItemAtAvgRate);
+          }
+      }
+      
+      const totalFtc = ftc90_90A + ftc91;
+      totalFtcAllowed += totalFtc;
+
+      itemizedInternationalResults.push({
+          id: item.id,
+          indianTax: item.taxOnThisItem,
+          ftc90_90A,
+          ftc91,
+          totalFtc,
+          netTax: item.taxOnThisItem - totalFtc,
+          applicableRate: item.finalApplicableRate,
+      });
+  });
   
   const otherReliefs = totalFtcAllowed;
-  const finalTaxPayable = Math.max(0, totalTaxLiability - otherReliefs);
+  const finalTaxPayable = Math.max(0, totalTaxPayableBeforeRelief - otherReliefs);
     
   const taxBreakdownForInterest: ComputationResult['breakdown']['tax'] = {
     onNormalIncome: taxOnNormalIncome, onSTCG111A: taxOnSTCG111A, onLTCG112A: taxOnLTCG112A,
@@ -781,7 +813,7 @@ export function calculateTax(data: TaxData): ComputationResult {
     surcharge: totalSurcharge,
     marginalRelief,
     healthAndEducationCess,
-    totalTaxPayable: totalTaxLiability,
+    totalTaxPayable: finalTaxPayable,
     rebate87A,
     relief: otherReliefs,
     tds: data.tds ?? 0,
@@ -798,7 +830,7 @@ export function calculateTax(data: TaxData): ComputationResult {
         otherSources: { returned: 0, additions: finalOtherSources, assessed: finalOtherSources },
         winnings: { returned: 0, additions: incomePool.winnings, assessed: incomePool.winnings },
         deemed: deemedIncome,
-        international: { netIncomeAdded: netForeignIncomeAdded, taxOnIncome: taxOnForeignIncome, ftcAllowed: totalFtcAllowed, itemized: itemizedInternationalResults },
+        international: { netIncomeAdded: netForeignIncomeAdded, taxOnIncome: taxOnForeignIncome, totalFtcAllowed: totalFtcAllowed, itemized: itemizedInternationalResults },
       },
       tax: taxBreakdownForInterest,
       surchargeBreakdown: { onDeemedIncome: surchargeOnDeemedIncome, onOtherIncomeGross: grossSurcharge, },
