@@ -1,8 +1,6 @@
 
 
-
-
-import { TaxData, ComputationResult, CapitalGainsBreakdown, TaxRegime, InterestResult, IncomeSource, DetailedIncomeBreakdown, SetOffDetail, PresumptiveScheme, ResidentialStatus, AdditionItem, InternationalIncomeNature, InternationalIncomeItem, InternationalIncomeComputation, TrustData, TrustComputationResult } from '../types';
+import { TaxData, ComputationResult, CapitalGainsBreakdown, TaxRegime, InterestResult, IncomeSource, DetailedIncomeBreakdown, SetOffDetail, PresumptiveScheme, ResidentialStatus, AdditionItem, InternationalIncomeNature, InternationalIncomeItem, InternationalIncomeComputation, TrustData, TrustComputationResult, HouseProperty } from '../types';
 import { YEARLY_CONFIGS } from '../constants';
 
 const getTaxableValue = (
@@ -37,43 +35,70 @@ const getIncomeSourceBreakdown = (assessedValue: number): DetailedIncomeBreakdow
 
 
 function calculateHousePropertyIncome(
-    hpData: TaxData['houseProperty'],
+    hpDataArray: HouseProperty[],
     residentialStatus: ResidentialStatus,
-    yearConfig: any 
-): { income: number, breakdown: DetailedIncomeBreakdown, nav: number, standardDeduction24a: number } {
-    const assessedGrossRent = getTaxableValue(hpData.grossRent, residentialStatus);
-    const assessedMunicipalTaxes = getTaxableValue(hpData.municipalTaxes, residentialStatus);
-    const assessedInterest = getTaxableValue(hpData.interestOnLoan, residentialStatus);
+    assessmentYear: string,
+    taxRegime: TaxRegime,
+    yearConfig: any
+): { income: number; breakdown: DetailedIncomeBreakdown; nav: number; standardDeduction24a: number } {
+    let totalHPIncome = 0;
+    let totalNAV = 0;
+    let totalStdDeduction24a = 0;
 
-    let nav = 0;
-    let standardDeduction24a = 0;
-    let interestDeduction24b = 0;
-    let income = 0;
+    const ayNum = parseInt(assessmentYear.split('-')[0], 10);
+    // The option to claim up to 2 SOPs (with Nil GAV) is available from AY 2020-21 onwards,
+    // regardless of the tax regime chosen. The tax treatment of interest deduction is handled separately.
+    const maxSOPs = (ayNum >= 2020) ? 2 : 1;
 
-    if (hpData.isSelfOccupied) {
-        // GAV and NAV are nil for self-occupied property as per Sec 23(2)
-        nav = 0;
-        standardDeduction24a = 0;
-        // Interest deduction u/s 24(b) is capped for SOP
+    const sops = hpDataArray.filter(p => p.isSelfOccupied);
+    const lops = hpDataArray.filter(p => !p.isSelfOccupied);
+
+    const actualSops = sops.slice(0, maxSOPs);
+    const dlops = sops.slice(maxSOPs); // Excess SOPs are treated as DLOPs
+
+    // 1. Calculate income from LOPs and DLOPs
+    [...lops, ...dlops].forEach(property => {
+        const assessedGrossRent = getTaxableValue(property.grossRent, residentialStatus);
+        const assessedMunicipalTaxes = getTaxableValue(property.municipalTaxes, residentialStatus);
+        const assessedInterest = getTaxableValue(property.interestOnLoan, residentialStatus);
+
+        const gav = assessedGrossRent;
+        const nav = Math.max(0, gav - assessedMunicipalTaxes);
+        const standardDeduction24a = nav * 0.30;
+        const interestDeduction24b = assessedInterest;
+
+        const incomeFromProperty = nav - standardDeduction24a - interestDeduction24b;
+        totalHPIncome += incomeFromProperty;
+        totalNAV += nav;
+        totalStdDeduction24a += standardDeduction24a;
+    });
+
+    // 2. Calculate loss from SOPs (only for Old Regime)
+    if (taxRegime === TaxRegime.Old && actualSops.length > 0) {
+        const totalInterestOnSOPs = actualSops.reduce((acc, sop) => {
+            return acc + getTaxableValue(sop.interestOnLoan, residentialStatus);
+        }, 0);
+
         const limit = yearConfig.DEDUCTION_LIMITS.HP_INTEREST_DEDUCTION_LIMIT_SOP || 200000;
-        interestDeduction24b = Math.min(assessedInterest, limit);
-        income = nav - standardDeduction24a - interestDeduction24b;
-    } else { // Let-out property
-        const gav = assessedGrossRent; // Assuming Gross Rent is GAV for simplicity
-        nav = Math.max(0, gav - assessedMunicipalTaxes);
-        standardDeduction24a = nav * 0.30; // 30% of NAV u/s 24(a)
-        interestDeduction24b = assessedInterest; // No limit on interest for LOP
-        income = nav - standardDeduction24a - interestDeduction24b;
+        const cappedInterestDeduction = Math.min(totalInterestOnSOPs, limit);
+        
+        totalHPIncome -= cappedInterestDeduction;
     }
-    
-    const finalIncome = Math.round(income);
+    // For New Regime, interest on SOP is not deductible, so loss is 0.
+
+    const finalIncome = Math.round(totalHPIncome);
     const breakdown: DetailedIncomeBreakdown = {
         baseAmount: 0,
-        totalAdditions: finalIncome,
+        totalAdditions: finalIncome, // Simplified for now
         assessed: finalIncome,
     };
 
-    return { income: finalIncome, breakdown, nav: Math.round(nav), standardDeduction24a: Math.round(standardDeduction24a) };
+    return {
+        income: finalIncome,
+        breakdown,
+        nav: Math.round(totalNAV),
+        standardDeduction24a: Math.round(totalStdDeduction24a),
+    };
 }
 
 
@@ -329,27 +354,29 @@ export function calculateTax(data: TaxData): ComputationResult {
   const { residentialStatus } = data;
 
   // --- Calculate Income from Salary ---
+  const { salary } = data;
   const allSalarySources = [
-    data.salary.basicSalary, data.salary.allowances, data.salary.bonusAndCommission,
-    data.salary.perquisites.rentFreeAccommodation, data.salary.perquisites.motorCar,
-    data.salary.perquisites.otherPerquisites, data.salary.profitsInLieu.terminationCompensation,
-    data.salary.profitsInLieu.commutedPension, data.salary.profitsInLieu.retrenchmentCompensation,
-    data.salary.profitsInLieu.vrsCompensation, data.salary.profitsInLieu.otherProfitsInLieu,
-    data.salary.exemptions.hra, data.salary.exemptions.lta, data.salary.exemptions.gratuity,
-    data.salary.exemptions.leaveEncashment, data.salary.exemptions.commutedPension,
-    data.salary.exemptions.retrenchmentCompensation, data.salary.exemptions.vrsCompensation,
-    data.salary.exemptions.providentFund, data.salary.exemptions.superannuationFund,
-    data.salary.exemptions.specialAllowances, data.salary.exemptions.otherExemptions,
-    data.salary.deductions.professionalTax, data.salary.deductions.entertainmentAllowance
+    salary.basicSalary, salary.allowances, salary.bonusAndCommission,
+    salary.perquisites.rentFreeAccommodation, salary.perquisites.motorCar,
+    salary.perquisites.otherPerquisites, salary.profitsInLieu.terminationCompensation,
+    salary.profitsInLieu.commutedPension, salary.profitsInLieu.retrenchmentCompensation,
+    salary.profitsInLieu.vrsCompensation, salary.profitsInLieu.otherProfitsInLieu,
+    salary.exemptions.hra, salary.exemptions.lta, salary.exemptions.gratuity,
+    salary.exemptions.leaveEncashment, salary.exemptions.commutedPension,
+    salary.exemptions.retrenchmentCompensation, salary.exemptions.vrsCompensation,
+    salary.exemptions.providentFund, salary.exemptions.superannuationFund,
+    salary.exemptions.specialAllowances, salary.exemptions.otherExemptions,
+    salary.deductions.professionalTax, salary.deductions.entertainmentAllowance
   ];
-
-  const assessedSalaryGross = allSalarySources.reduce((acc, source) => {
+  let assessedSalaryGross = allSalarySources.reduce((acc, source) => {
     return acc + getTaxableValue(source, residentialStatus);
   }, 0);
   
   let standardDeduction = 0;
-  if (data.salary.wasStandardDeductionAllowedPreviously) {
-    standardDeduction = 0;
+  const wasSDEverAllowed = data.salary.wasStandardDeductionAllowedPreviously;
+
+  if (wasSDEverAllowed) {
+      standardDeduction = 0;
   } else if (data.taxpayerType === 'individual' && assessedSalaryGross > 0) {
       const sdConfig = individualConfig.DEDUCTION_LIMITS;
       if (data.taxRegime === TaxRegime.New && sdConfig.STANDARD_DEDUCTION_NEW_REGIME) {
@@ -367,7 +394,7 @@ export function calculateTax(data: TaxData): ComputationResult {
   
 
   // --- Calculate Income from Other Heads ---
-  const housePropertyResult = calculateHousePropertyIncome(data.houseProperty, residentialStatus, yearConfig);
+  const housePropertyResult = calculateHousePropertyIncome(data.houseProperty, residentialStatus, data.assessmentYear, data.taxRegime, yearConfig);
   const assessedSpeculativeIncome = getTaxableValue(data.pgbp.speculativeIncome, residentialStatus, data.pgbp.isControlledFromIndia, 'pgbp');
   
   let assessedPgbpNonSpeculativeIncome = 0;
@@ -578,10 +605,13 @@ export function calculateTax(data: TaxData): ComputationResult {
   
   // 2. Current Year Inter-Head Set-off
   let hpLossToSetOff = Math.min(lossPool.current.hp, yearConfig.DEDUCTION_LIMITS.HP_LOSS_SETOFF_LIMIT || 200000);
-  const hpSetoffOrder: (keyof typeof incomePool)[] = ['pgbpNonSpeculative', 'pgbpSpeculative', 'stcgOther', 'ltcgOther', 'otherSources', 'raceHorseIncome', 'salary', 'stcg111A', 'ltcg112A', 'winnings'];
-  for (const head of hpSetoffOrder) {
-      if (hpLossToSetOff <= 0) break;
-      hpLossToSetOff -= reduceIncome("CY HP Loss", hpLossToSetOff, head);
+  // HP Loss set-off is disallowed under New Regime
+  if (data.taxRegime === TaxRegime.Old) {
+    const hpSetoffOrder: (keyof typeof incomePool)[] = ['pgbpNonSpeculative', 'pgbpSpeculative', 'stcgOther', 'ltcgOther', 'otherSources', 'raceHorseIncome', 'salary', 'stcg111A', 'ltcg112A', 'winnings'];
+    for (const head of hpSetoffOrder) {
+        if (hpLossToSetOff <= 0) break;
+        hpLossToSetOff -= reduceIncome("CY HP Loss", hpLossToSetOff, head);
+    }
   }
   lossPool.current.hp = Math.max(0, lossPool.current.hp - (yearConfig.DEDUCTION_LIMITS.HP_LOSS_SETOFF_LIMIT || 200000) + hpLossToSetOff);
   
@@ -667,15 +697,52 @@ export function calculateTax(data: TaxData): ComputationResult {
       let slabs: { limit: number; rate: number }[] | null = null;
       
       switch (data.taxpayerType) {
-        case 'individual': case 'huf': case 'aop': case 'boi': case 'artificial juridical person':
-            const entityConfig = yearConfig[data.taxpayerType] || yearConfig.individual;
-            const ageKey = data.taxpayerType === 'individual' ? data.age : 'below60';
-            slabs = entityConfig.SLABS[data.taxRegime][ageKey];
+        case 'individual': {
+            const entityConfig = yearConfig.individual;
+            let slabKey: string;
+            const ay = parseInt(data.assessmentYear.split('-')[0]);
+
+            if (ay <= 2011) { // For AY 2010-11, 2011-12 (senior is 65+)
+                if (data.age === '60to80' || data.age === 'above80') {
+                    slabKey = 'senior';
+                } else if (data.gender === 'female' && data.residentialStatus !== 'non_resident') {
+                    slabKey = 'female';
+                } else {
+                    slabKey = 'male';
+                }
+            } else if (ay === 2012) { // For AY 2012-13 (senior is 60+)
+                if (data.age === '60to80' || data.age === 'above80') {
+                    slabKey = 'senior';
+                } else if (data.gender === 'female' && data.residentialStatus !== 'non_resident') {
+                    slabKey = 'female';
+                } else {
+                    slabKey = 'male';
+                }
+            } else { // AY 2013-14 onwards
+                slabKey = data.age; // below60, 60to80, above80
+            }
+            
+            const individualSlabs = entityConfig.SLABS[data.taxRegime] || entityConfig.SLABS;
+            slabs = individualSlabs[slabKey] || individualSlabs['below60'] || individualSlabs['male']; // Fallback
             taxOnNormalIncome = calculateTaxOnIncome(normalIncome, slabs);
             break;
+        }
+        case 'huf': case 'aop': case 'boi': case 'artificial juridical person': {
+            const entityConfig = yearConfig[data.taxpayerType];
+            const entitySlabs = entityConfig.SLABS[data.taxRegime] || entityConfig.SLABS;
+            slabs = entitySlabs['below60'] || entitySlabs['male'];
+            taxOnNormalIncome = calculateTaxOnIncome(normalIncome, slabs);
+            break;
+        }
         case 'firm': case 'llp': case 'local authority':
             taxOnNormalIncome = normalIncome * yearConfig[data.taxpayerType].RATE;
             break;
+        case 'co-operative society': {
+             const coopConfig = yearConfig[data.taxpayerType];
+             slabs = coopConfig.SLABS;
+             taxOnNormalIncome = calculateTaxOnIncome(normalIncome, slabs);
+             break;
+        }
         case 'company': {
             const companyConfig = yearConfig.company[data.companyType as 'domestic' | 'foreign'];
             let rate = companyConfig.RATE;
@@ -868,9 +935,21 @@ export function calculateTax(data: TaxData): ComputationResult {
       unabsorbedDepreciation: lossPool.broughtForward.unabsorbedDepreciation,
   };
 
-  const finalPgbpIncome = incomePool.pgbpNonSpeculative + incomePool.pgbpSpeculative;
+  const assessedFinalHP = housePropertyResult.income >= 0 ? incomePool.hp : -lossPool.current.hp;
+
+  const initialPGBPNonSpec = assessedPgbpNonSpeculativeIncome + (data.losses.currentYear.businessNonSpeculative ?? 0) > 0;
+  const assessedFinalPGBPNonSpec = initialPGBPNonSpec ? incomePool.pgbpNonSpeculative : -lossPool.current.businessNonSpeculative;
+
+  const initialPGPBSpec = assessedSpeculativeIncome + (data.losses.currentYear.businessSpeculative ?? 0) > 0;
+  const assessedFinalPGPBSpec = initialPGPBSpec ? incomePool.pgbpSpeculative : -lossPool.current.businessSpeculative;
+  
+  const assessedFinalPGBP = assessedFinalPGBPNonSpec + assessedFinalPGPBSpec;
+
+  const initialRaceHorse = assessedRaceHorseIncome + (data.losses.currentYear.raceHorses ?? 0) > 0;
+  const assessedFinalRaceHorse = initialRaceHorse ? incomePool.raceHorseIncome : -lossPool.current.raceHorses;
+
   const finalCapitalGains = incomePool.stcg111A + incomePool.stcgOther + incomePool.ltcg112A + incomePool.ltcgOther;
-  const finalOtherSources = incomePool.otherSources + incomePool.raceHorseIncome;
+  const finalOtherSources = incomePool.otherSources + assessedFinalRaceHorse;
 
   return {
     grossTotalIncome,
@@ -892,8 +971,9 @@ export function calculateTax(data: TaxData): ComputationResult {
     breakdown: {
       income: {
         salary: { baseAmount: 0, totalAdditions: assessedSalaryGross, assessed: incomePool.salary },
-        houseProperty: { baseAmount: 0, totalAdditions: housePropertyResult.breakdown.totalAdditions, assessed: incomePool.hp },
-        pgbp: { netProfit: pgbpBaseAmount, baseAmount: pgbpBaseAmount, totalAdditions: pgbpTotalAdditions + assessedSpeculativeIncome, assessed: finalPgbpIncome },
+        houseProperty: { baseAmount: 0, totalAdditions: housePropertyResult.breakdown.totalAdditions, assessed: assessedFinalHP },
+        // FIX: Corrected variable name from finalPGBP to assessedFinalPGBP
+        pgbp: { netProfit: pgbpBaseAmount, baseAmount: pgbpBaseAmount, totalAdditions: pgbpTotalAdditions + assessedSpeculativeIncome, assessed: assessedFinalPGBP },
         capitalGains: { baseAmount: 0, totalAdditions: totalCapitalGainsAdditions, assessed: finalCapitalGains },
         capitalGainsBreakdown: { stcg111A: incomePool.stcg111A, stcgOther: incomePool.stcgOther, ltcg112A: incomePool.ltcg112A, ltcgOther: incomePool.ltcgOther },
         otherSources: { baseAmount: 0, totalAdditions: totalOtherSourcesAdditions, assessed: finalOtherSources },

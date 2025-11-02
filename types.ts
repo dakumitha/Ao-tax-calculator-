@@ -17,7 +17,7 @@ export interface IncomeSource {
   additions: AdditionItem[];
 }
 
-export interface Salary {
+export interface SalaryDetails {
   employeeType: 'government' | 'non-government';
   wasStandardDeductionAllowedPreviously: boolean;
   // Sec 17(1) - Salary Components
@@ -65,6 +65,7 @@ export interface Salary {
 
 
 export interface HouseProperty {
+  id: string;
   grossRent: IncomeSource;
   municipalTaxes: IncomeSource;
   interestOnLoan: IncomeSource;
@@ -332,17 +333,18 @@ export interface TaxData {
   assesseeName: string;
   pan: string;
   assessmentYear: string;
-  taxpayerType: 'individual' | 'huf' | 'company' | 'firm' | 'llp' | 'aop' | 'boi' | 'local authority' | 'artificial juridical person' | 'trust';
+  taxpayerType: 'individual' | 'huf' | 'company' | 'firm' | 'llp' | 'aop' | 'boi' | 'local authority' | 'artificial juridical person' | 'trust' | 'co-operative society';
   residentialStatus: ResidentialStatus;
   companyType?: 'domestic' | 'foreign';
   previousYearTurnover?: number | null;
   age: 'below60' | '60to80' | 'above80';
+  gender?: 'male' | 'female';
   taxRegime: TaxRegime;
   
   trustData: TrustData;
 
-  salary: Salary;
-  houseProperty: HouseProperty;
+  salary: SalaryDetails;
+  houseProperty: HouseProperty[];
   pgbp: PGBP;
   capitalGains: CapitalGains;
   otherSources: OtherSources;

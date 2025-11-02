@@ -1,11 +1,5 @@
-
-
-
-
-
-
 import React, { useState, useReducer, useMemo, useEffect } from 'react';
-import { TaxData, TaxRegime, IncomeSource, ComputationResult, AssessmentType, AdditionItem, DetailedIncomeBreakdown, SetOffDetail, PresumptiveScheme, Vehicle44AE, ResidentialStatus, InternationalIncomeItem, InternationalIncomeNature, ComplianceStatus, TrustData } from './types';
+import { TaxData, TaxRegime, IncomeSource, ComputationResult, AssessmentType, AdditionItem, DetailedIncomeBreakdown, SetOffDetail, PresumptiveScheme, Vehicle44AE, ResidentialStatus, InternationalIncomeItem, InternationalIncomeNature, ComplianceStatus, TrustData, SalaryDetails, HouseProperty } from './types';
 import { TABS, ASSESSMENT_YEARS, YEARLY_CONFIGS, FILING_DUE_DATES, AUDIT_TAXPAYER_TYPES } from './constants';
 import { calculateTax } from './services/taxCalculator';
 
@@ -25,8 +19,9 @@ const newAdditionItem = (): AdditionItem => ({
 });
 
 const newIncomeSource = (): IncomeSource => ({
-    additions: [],
+    additions: [newAdditionItem()],
 });
+
 
 const newVehicle44AE = (): Vehicle44AE => ({
   id: Date.now().toString(36) + Math.random().toString(36).substring(2),
@@ -63,19 +58,7 @@ const newTrustData = (): TrustData => ({
     disallowedReceipts10_23C: newIncomeSource(),
 });
 
-
-const initialTaxData: TaxData = {
-  assesseeName: '',
-  pan: '',
-  assessmentYear: '2024-25',
-  taxpayerType: 'individual',
-  residentialStatus: 'resident_ordinarily_resident',
-  age: 'below60',
-  taxRegime: TaxRegime.Old, // Default to Old, as selection is removed. Comparison view handles both.
-  companyType: 'domestic',
-  previousYearTurnover: null,
-  trustData: newTrustData(),
-  salary: {
+const newSalaryDetails = (): SalaryDetails => ({
     employeeType: 'non-government',
     wasStandardDeductionAllowedPreviously: false,
     basicSalary: newIncomeSource(),
@@ -110,8 +93,31 @@ const initialTaxData: TaxData = {
         professionalTax: newIncomeSource(),
         entertainmentAllowance: newIncomeSource(),
     },
-  },
-  houseProperty: { grossRent: newIncomeSource(), municipalTaxes: newIncomeSource(), interestOnLoan: newIncomeSource(), isSelfOccupied: false },
+});
+
+const newHouseProperty = (): HouseProperty => ({
+    id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+    grossRent: newIncomeSource(),
+    municipalTaxes: newIncomeSource(),
+    interestOnLoan: newIncomeSource(),
+    isSelfOccupied: false,
+});
+
+
+const initialTaxData: TaxData = {
+  assesseeName: '',
+  pan: '',
+  assessmentYear: '2024-25',
+  taxpayerType: 'individual',
+  residentialStatus: 'resident_ordinarily_resident',
+  age: 'below60',
+  gender: 'male',
+  taxRegime: TaxRegime.Old, // Default to Old, as selection is removed. Comparison view handles both.
+  companyType: 'domestic',
+  previousYearTurnover: null,
+  trustData: newTrustData(),
+  salary: newSalaryDetails(),
+  houseProperty: [newHouseProperty()],
   pgbp: {
     isControlledFromIndia: false,
     netProfit: newIncomeSource(),
@@ -208,6 +214,8 @@ type Action =
   | { type: 'ADD_INTERNATIONAL_INCOME' }
   | { type: 'REMOVE_INTERNATIONAL_INCOME'; payload: { id: string } }
   | { type: 'UPDATE_INTERNATIONAL_INCOME_ITEM'; payload: { id: string; path: string; value: any } }
+  | { type: 'ADD_HOUSE_PROPERTY' }
+  | { type: 'REMOVE_HOUSE_PROPERTY'; payload: { id: string } }
   | { type: 'RESET_STATE'; payload: TaxData };
 
 
@@ -218,6 +226,15 @@ function taxDataReducer(state: TaxData, action: Action): TaxData {
     switch (action.type) {
         case 'RESET_STATE':
             return action.payload;
+        case 'ADD_HOUSE_PROPERTY':
+            newState.houseProperty.push(newHouseProperty());
+            return newState;
+        case 'REMOVE_HOUSE_PROPERTY':
+            newState.houseProperty = newState.houseProperty.filter((hp: HouseProperty) => hp.id !== action.payload.id);
+            if (newState.houseProperty.length === 0) {
+                newState.houseProperty.push(newHouseProperty());
+            }
+            return newState;
         case 'ADD_VEHICLE':
             newState.pgbp.vehicles44AE.push(newVehicle44AE());
             return newState;
@@ -379,23 +396,29 @@ const IncomeTableRow: React.FC<{
     dispatch: React.Dispatch<Action>;
     helpText?: string;
     disabled?: boolean;
-}> = ({ label, path, value, dispatch, helpText, disabled = false }) => {
+    multiEntry?: boolean;
+}> = ({ label, path, value, dispatch, helpText, disabled = false, multiEntry = false }) => {
     
     useEffect(() => {
-        // This effect ensures that every IncomeSource always has at least one AdditionItem.
-        // The check for `value` is a safeguard against it being transiently undefined.
-        if (value && (!value.additions || value.additions.length === 0)) {
+        // Ensure there's always one item for single-entry rows
+        if (!multiEntry && value && (!value.additions || value.additions.length === 0)) {
             dispatch({ type: 'ADD_ITEM', payload: { path } });
         }
-    }, [path, value, dispatch]);
+    }, [path, value, dispatch, multiEntry]);
 
-    const handleItemChange = (id: string, field: 'amount' | 'location', val: any) => {
-        const value = field === 'amount' ? parseFormattedValue(val) : val;
+    const handleItemChange = (id: string, field: 'amount', val: any) => {
+        const value = parseFormattedValue(val);
         dispatch({ type: 'UPDATE_ITEM', payload: { path, id, field, value } });
     };
 
-    // Before the useEffect runs for the first time, `value.additions` might be empty.
-    // We get the first item to bind to the input.
+    const handleAdd = () => {
+        dispatch({ type: 'ADD_ITEM', payload: { path } });
+    };
+
+    const handleRemove = (id: string) => {
+        dispatch({ type: 'REMOVE_ITEM', payload: { path, id } });
+    };
+
     const firstItem = value?.additions?.[0];
 
     return (
@@ -405,19 +428,50 @@ const IncomeTableRow: React.FC<{
                 {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
             </td>
             <td className="p-2">
-                 {firstItem ? (
-                    <input 
-                        type="text" 
-                        placeholder="Amount" 
-                        value={disabled ? '' : formatInputValue(firstItem.amount)}
-                        onChange={e => handleItemChange(firstItem.id, 'amount', e.target.value)}
-                        disabled={disabled}
-                        className={`p-2 border rounded-md text-left w-full text-sm ${disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-white'}`}
-                    />
-                ) : (
-                    // Render a disabled input as a placeholder until the item is added by the effect.
-                    <input type="text" disabled className="p-2 border rounded-md text-left w-full text-sm bg-gray-200" />
-                )}
+                 {multiEntry ? (
+                    <div className="space-y-2">
+                        {value?.additions?.map(item => (
+                            <div key={item.id} className="flex items-center gap-2">
+                                <input 
+                                    type="text" 
+                                    placeholder="Amount" 
+                                    value={disabled ? '' : formatInputValue(item.amount)}
+                                    onChange={e => handleItemChange(item.id, 'amount', e.target.value)}
+                                    disabled={disabled}
+                                    className={`p-2 border rounded-md text-left flex-grow text-sm ${disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-white'}`}
+                                />
+                                <button 
+                                    onClick={() => handleRemove(item.id)} 
+                                    disabled={disabled || value.additions.length <= 1}
+                                    className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                                    aria-label="Remove entry"
+                                >
+                                    Remove
+                                </button>
+                            </div>
+                        ))}
+                        <button
+                            onClick={handleAdd}
+                            disabled={disabled}
+                            className="mt-2 text-sm text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                        >
+                            + Add Entry
+                        </button>
+                    </div>
+                 ) : (
+                    firstItem ? (
+                        <input 
+                            type="text" 
+                            placeholder="Amount" 
+                            value={disabled ? '' : formatInputValue(firstItem.amount)}
+                            onChange={e => handleItemChange(firstItem.id, 'amount', e.target.value)}
+                            disabled={disabled}
+                            className={`p-2 border rounded-md text-left w-full text-sm ${disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-white'}`}
+                        />
+                    ) : (
+                        <input type="text" disabled className="p-2 border rounded-md text-left w-full text-sm bg-gray-200" />
+                    )
+                 )}
             </td>
         </tr>
     );
@@ -509,15 +563,23 @@ const DescribedIncomeTableRow: React.FC<{
 };
 
 
-const Card: React.FC<{ title: string; children: React.ReactNode, className?: string }> = ({ title, children, className }) => (
+const Card: React.FC<{ title: React.ReactNode; children: React.ReactNode, className?: string }> = ({ title, children, className }) => (
   <div className={`bg-white p-6 rounded-lg shadow-md mb-6 ${className}`}>
-    <h2 className="text-xl font-semibold text-gray-800 border-b pb-3 mb-4 no-print">{title}</h2>
+    <div className="text-xl font-semibold text-gray-800 border-b pb-3 mb-4 no-print">{title}</div>
     {children}
   </div>
 );
 
 const ComparisonRow: React.FC<{ label: React.ReactNode; oldVal: number; newVal: number; isNegative?: boolean; isBold?: boolean; isAccent?: boolean }> = ({ label, oldVal, newVal, isNegative, isBold, isAccent }) => {
-    const format = (val: number) => isNegative ? `(${formatCurrency(Math.abs(val))})` : formatCurrency(val);
+    const format = (val: number) => {
+        if (isNegative) { // For deductions, etc., which are always subtracted
+            return `(${formatCurrency(Math.abs(val))})`;
+        }
+        if (val < 0) { // For income heads that are losses
+            return `(${formatCurrency(Math.abs(val))})`;
+        }
+        return formatCurrency(val);
+    };
 
     return (
         <tr className={`${isBold ? 'font-bold' : ''} ${isAccent ? 'bg-gray-50' : 'border-b'}`}>
@@ -749,12 +811,24 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
         </>
     );
 
-    const Row: React.FC<{ label: React.ReactNode; amount: number; isBold?: boolean; isNegative?: boolean; isAccent?: boolean }> = ({ label, amount, isBold = false, isNegative = false, isAccent = false }) => (
-        <tr className={`${isBold ? 'font-bold' : ''} ${isAccent ? 'bg-gray-100' : 'border-b'}`}>
-            <td className="p-2 text-left">{label}</td>
-            <td className="p-2 text-right">{isNegative ? `(${formatCurrency(Math.abs(amount))})` : formatCurrency(amount)}</td>
-        </tr>
-    );
+    const Row: React.FC<{ label: React.ReactNode; amount: number; isBold?: boolean; isNegative?: boolean; isAccent?: boolean }> = ({ label, amount, isBold = false, isNegative = false, isAccent = false }) => {
+        const format = (val: number) => {
+            if (isNegative) { // For deductions, etc., which are always subtracted
+                return `(${formatCurrency(Math.abs(val))})`;
+            }
+            if (val < 0) { // For income heads that are losses
+                return `(${formatCurrency(Math.abs(val))})`;
+            }
+            return formatCurrency(val);
+        };
+        
+        return (
+            <tr className={`${isBold ? 'font-bold' : ''} ${isAccent ? 'bg-gray-100' : 'border-b'}`}>
+                <td className="p-2 text-left">{label}</td>
+                <td className="p-2 text-right">{format(amount)}</td>
+            </tr>
+        )
+    };
     
     const anyLossesToCarryForward = Object.values(result.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
     const trustResult = result.trustComputation;
@@ -972,6 +1046,25 @@ const RadioGroup: React.FC<{ label: string, path: string, value: boolean | null,
     </div>
 );
 
+const getIncomeSourceAmount = (source: IncomeSource | undefined): number => {
+    if (!source || !source.additions) return 0;
+    return source.additions.reduce((acc, item) => acc + (item.amount ?? 0), 0);
+};
+
+const CalculatedDisplayRow: React.FC<{ label: string; value: number; helpText?: string; }> = ({ label, value, helpText }) => (
+    <tr className="border-b last:border-0 align-top">
+        <td className="p-2 align-top pt-4">
+            <p className="font-medium text-sm text-gray-500">{label}</p>
+            {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
+        </td>
+        <td className="p-2 pt-4">
+            <div className="p-2 bg-gray-100 rounded-md text-left text-sm text-gray-800 font-mono">
+                {formatCurrency(value)}
+            </div>
+        </td>
+    </tr>
+);
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('Assessee Details');
   const [taxData, dispatch] = useReducer(taxDataReducer, initialTaxData);
@@ -1035,11 +1128,11 @@ export default function App() {
   });
 
   const renderContent = () => {
-    const tableHeader = (
+    const tableHeader = () => (
         <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
             <tr>
                 <th className="p-2 text-left font-semibold w-2/5">Particulars</th>
-                <th className="p-2 text-left font-semibold w-3/5">Entry (Amount)</th>
+                <th className="p-2 text-left font-semibold">Entry (Amount)</th>
             </tr>
         </thead>
     );
@@ -1047,6 +1140,7 @@ export default function App() {
     switch (activeTab) {
       case 'Assessee Details':
         const { trustData } = taxData;
+        const isWomanSlabApplicable = taxData.taxpayerType === 'individual' && parseInt(taxData.assessmentYear.split('-')[0]) <= 2012;
 
         return (<>
           <Card title="Assessee Details">
@@ -1071,6 +1165,7 @@ export default function App() {
                    <option value="llp">LLP</option>
                    <option value="aop">Association of Persons (AOP)</option>
                    <option value="boi">Body of Individuals (BOI)</option>
+                   <option value="co-operative society">Co-operative Society</option>
                    <option value="local authority">Local Authority</option>
                    <option value="artificial juridical person">Artificial Juridical Person</option>
                    <option value="trust">Trust / Institution</option>
@@ -1108,6 +1203,16 @@ export default function App() {
                     </select>
                 </div>
                }
+               {isWomanSlabApplicable &&
+                <div>
+                    <label className="block text-gray-600 font-medium text-sm mb-1">Gender</label>
+                    <select value={taxData.gender} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'gender', value: e.target.value as 'male' | 'female'}})} className="w-full p-2 border rounded-md">
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">Relevant for special tax slab for resident women in AY 2012-13 and earlier.</p>
+                </div>
+               }
             </div>
             <div className="mt-6 border-t pt-6">
                 <SingleInputField label="TDS / TCS" path="tds" value={taxData.tds} dispatch={dispatch} />
@@ -1138,7 +1243,7 @@ export default function App() {
           {taxData.taxpayerType === 'trust' && (
               <Card title="Trust / Institution Disallowances">
                 <table className="w-full table-fixed">
-                  {tableHeader}
+                  {tableHeader()}
                   <tbody>
                     <IncomeTableRow
                       label={<>Receipts Disallowed u/s 12A/12AA/12AB</>}
@@ -1180,19 +1285,20 @@ export default function App() {
         );
       case 'Salary': {
         const salaryAdditionHelpText = "Enter the amount to be added to the total salary income.";
+        const { salary } = taxData;
         return (
           <>
-            <Card title="Income from Salary Details">
+            <Card title="Income from Salary">
                  <div className="mb-6 flex items-center gap-6 p-4 bg-gray-50 rounded-lg">
                      <label className="font-medium text-gray-700">Employee Type:</label>
                      <div className="flex items-center gap-4">
                          <label className="flex items-center cursor-pointer">
                              <input
                                  type="radio"
-                                 name="employeeType"
+                                 name={`employeeType`}
                                  value="non-government"
-                                 checked={taxData.salary.employeeType === 'non-government'}
-                                 onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'salary.employeeType', value: e.target.value } })}
+                                 checked={salary.employeeType === 'non-government'}
+                                 onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: `salary.employeeType`, value: e.target.value } })}
                                  className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                              />
                              <span className="ml-2 text-sm text-gray-800">Non-Government</span>
@@ -1200,10 +1306,10 @@ export default function App() {
                          <label className="flex items-center cursor-pointer">
                              <input
                                  type="radio"
-                                 name="employeeType"
+                                 name={`employeeType`}
                                  value="government"
-                                 checked={taxData.salary.employeeType === 'government'}
-                                 onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'salary.employeeType', value: e.target.value } })}
+                                 checked={salary.employeeType === 'government'}
+                                 onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: `salary.employeeType`, value: e.target.value } })}
                                  className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                              />
                              <span className="ml-2 text-sm text-gray-800">Government</span>
@@ -1217,9 +1323,9 @@ export default function App() {
                         <label className="flex items-center cursor-pointer">
                             <input
                                 type="radio"
-                                name="wasStandardDeductionAllowedPreviously"
-                                checked={taxData.salary.wasStandardDeductionAllowedPreviously === true}
-                                onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'salary.wasStandardDeductionAllowedPreviously', value: true } })}
+                                name={`wasStandardDeductionAllowedPreviously`}
+                                checked={salary.wasStandardDeductionAllowedPreviously === true}
+                                onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path: `salary.wasStandardDeductionAllowedPreviously`, value: true } })}
                                 className="h-4 w-4"
                             />
                             <span className="ml-2 text-sm text-gray-800">Yes</span>
@@ -1227,9 +1333,9 @@ export default function App() {
                         <label className="flex items-center cursor-pointer">
                             <input
                                 type="radio"
-                                name="wasStandardDeductionAllowedPreviously"
-                                checked={taxData.salary.wasStandardDeductionAllowedPreviously === false}
-                                onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'salary.wasStandardDeductionAllowedPreviously', value: false } })}
+                                name={`wasStandardDeductionAllowedPreviously`}
+                                checked={salary.wasStandardDeductionAllowedPreviously === false}
+                                onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path: `salary.wasStandardDeductionAllowedPreviously`, value: false } })}
                                 className="h-4 w-4"
                             />
                             <span className="ml-2 text-sm text-gray-800">No</span>
@@ -1239,815 +1345,533 @@ export default function App() {
 
                 <h3 className="font-bold text-md text-gray-800 mb-2">Assessable Salary Components (u/s 17)</h3>
                  <table className="w-full table-fixed mb-6">
-                     {tableHeader}
+                     {tableHeader()}
                      <tbody>
-                        <IncomeTableRow label="Basic Salary / Wages (Sec 17(1))" path="salary.basicSalary" value={taxData.salary.basicSalary} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Allowances (Sec 17(1))" path="salary.allowances" value={taxData.salary.allowances} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Bonus / Commission (Sec 17(1))" path="salary.bonusAndCommission" value={taxData.salary.bonusAndCommission} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Basic Salary / Wages (Sec 17(1))" path={`salary.basicSalary`} value={salary.basicSalary} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Allowances (Sec 17(1))" path={`salary.allowances`} value={salary.allowances} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Bonus / Commission (Sec 17(1))" path={`salary.bonusAndCommission`} value={salary.bonusAndCommission} dispatch={dispatch} helpText={salaryAdditionHelpText} />
                     </tbody>
                  </table>
                 
                 <h4 className="font-semibold text-base text-gray-700 mt-4 mb-2">Perquisites (Sec 17(2))</h4>
                 <table className="w-full table-fixed mb-6">
-                     {tableHeader}
+                     {tableHeader()}
                      <tbody>
-                        <IncomeTableRow label="Rent Free Accommodation (Rule 3)" path="salary.perquisites.rentFreeAccommodation" value={taxData.salary.perquisites.rentFreeAccommodation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Motor Car (Rule 3)" path="salary.perquisites.motorCar" value={taxData.salary.perquisites.motorCar} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Other Perquisites" path="salary.perquisites.otherPerquisites" value={taxData.salary.perquisites.otherPerquisites} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Rent Free Accommodation (Rule 3)" path={`salary.perquisites.rentFreeAccommodation`} value={salary.perquisites.rentFreeAccommodation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Motor Car (Rule 3(2))" path={`salary.perquisites.motorCar`} value={salary.perquisites.motorCar} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Other Perquisites" path={`salary.perquisites.otherPerquisites`} value={salary.perquisites.otherPerquisites} dispatch={dispatch} helpText={salaryAdditionHelpText} />
                     </tbody>
                 </table>
-                
+
                 <h4 className="font-semibold text-base text-gray-700 mt-4 mb-2">Profits in Lieu of Salary (Sec 17(3))</h4>
                 <table className="w-full table-fixed mb-6">
-                     {tableHeader}
+                     {tableHeader()}
                      <tbody>
-                        <IncomeTableRow label="Compensation on Termination" path="salary.profitsInLieu.terminationCompensation" value={taxData.salary.profitsInLieu.terminationCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Commuted Pension (Unexempt Portion)" path="salary.profitsInLieu.commutedPension" value={taxData.salary.profitsInLieu.commutedPension} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Retrenchment Compensation" path="salary.profitsInLieu.retrenchmentCompensation" value={taxData.salary.profitsInLieu.retrenchmentCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="VRS Compensation" path="salary.profitsInLieu.vrsCompensation" value={taxData.salary.profitsInLieu.vrsCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Other" path="salary.profitsInLieu.otherProfitsInLieu" value={taxData.salary.profitsInLieu.otherProfitsInLieu} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Compensation on Termination" path={`salary.profitsInLieu.terminationCompensation`} value={salary.profitsInLieu.terminationCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Commuted Pension" path={`salary.profitsInLieu.commutedPension`} value={salary.profitsInLieu.commutedPension} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Retrenchment Compensation" path={`salary.profitsInLieu.retrenchmentCompensation`} value={salary.profitsInLieu.retrenchmentCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="VRS Compensation" path={`salary.profitsInLieu.vrsCompensation`} value={salary.profitsInLieu.vrsCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+                        <IncomeTableRow multiEntry label="Other Profits in Lieu" path={`salary.profitsInLieu.otherProfitsInLieu`} value={salary.profitsInLieu.otherProfitsInLieu} dispatch={dispatch} helpText={salaryAdditionHelpText} />
                     </tbody>
                 </table>
-
-
-                <h3 className="font-bold text-md text-gray-800 mt-6 mb-2 pt-4 border-t">Additions: Disallowed Salary Exemptions (u/s 10)</h3>
-                 <table className="w-full table-fixed mb-6">
-                     {tableHeader}
-                     <tbody>
-                        <IncomeTableRow label="House Rent Allowance (Sec 10(13A))" path="salary.exemptions.hra" value={taxData.salary.exemptions.hra} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Leave Travel Allowance (Sec 10(5))" path="salary.exemptions.lta" value={taxData.salary.exemptions.lta} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Gratuity (Sec 10(10))" path="salary.exemptions.gratuity" value={taxData.salary.exemptions.gratuity} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Leave Encashment (Sec 10(10AA))" path="salary.exemptions.leaveEncashment" value={taxData.salary.exemptions.leaveEncashment} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Commuted Pension (Sec 10(10A))" path="salary.exemptions.commutedPension" value={taxData.salary.exemptions.commutedPension} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Retrenchment Compensation (Sec 10(10B))" path="salary.exemptions.retrenchmentCompensation" value={taxData.salary.exemptions.retrenchmentCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="VRS Compensation (Sec 10(10C))" path="salary.exemptions.vrsCompensation" value={taxData.salary.exemptions.vrsCompensation} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Provident/Superannuation Fund (Sec 10(11-13))" path="salary.exemptions.providentFund" value={taxData.salary.exemptions.providentFund} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Special Allowances (Sec 10(14))" path="salary.exemptions.specialAllowances" value={taxData.salary.exemptions.specialAllowances} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Other Exemptions (Sec 10)" path="salary.exemptions.otherExemptions" value={taxData.salary.exemptions.otherExemptions} dispatch={dispatch} helpText={salaryAdditionHelpText} />
+            </Card>
+            <Card title="Disallowance of Exemptions u/s 10">
+                <table className="w-full table-fixed mb-6">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="HRA (Sec 10(13A))" path={`salary.exemptions.hra`} value={salary.exemptions.hra} dispatch={dispatch} helpText="Disallowance of HRA exemption claimed." />
+                        <IncomeTableRow label="LTA (Sec 10(5))" path={`salary.exemptions.lta`} value={salary.exemptions.lta} dispatch={dispatch} helpText="Disallowance of LTA exemption claimed." />
+                        <IncomeTableRow label="Gratuity (Sec 10(10))" path={`salary.exemptions.gratuity`} value={salary.exemptions.gratuity} dispatch={dispatch} />
+                        <IncomeTableRow label="Leave Encashment (Sec 10(10AA))" path={`salary.exemptions.leaveEncashment`} value={salary.exemptions.leaveEncashment} dispatch={dispatch} />
+                        <IncomeTableRow label="Commuted Pension (Sec 10(10A))" path={`salary.exemptions.commutedPension`} value={salary.exemptions.commutedPension} dispatch={dispatch} />
+                        <IncomeTableRow label="Retrenchment Compensation (Sec 10(10B))" path={`salary.exemptions.retrenchmentCompensation`} value={salary.exemptions.retrenchmentCompensation} dispatch={dispatch} />
+                        <IncomeTableRow label="VRS Compensation (Sec 10(10C))" path={`salary.exemptions.vrsCompensation`} value={salary.exemptions.vrsCompensation} dispatch={dispatch} />
+                        <IncomeTableRow label="PF / Superannuation (Sec 10(11-13))" path={`salary.exemptions.providentFund`} value={salary.exemptions.providentFund} dispatch={dispatch} />
+                        <IncomeTableRow label="Special Allowances (Sec 10(14))" path={`salary.exemptions.specialAllowances`} value={salary.exemptions.specialAllowances} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Other Disallowed Exemptions" path={`salary.exemptions.otherExemptions`} value={salary.exemptions.otherExemptions} dispatch={dispatch} />
                     </tbody>
-                 </table>
-                
-                <h3 className="font-bold text-md text-gray-800 mt-6 mb-2 pt-4 border-t">Additions: Disallowed Salary Deductions (u/s 16)</h3>
-                 <table className="w-full table-fixed mb-6">
-                     {tableHeader}
-                     <tbody>
-                        <IncomeTableRow label="Professional Tax (Sec 16(iii))" path="salary.deductions.professionalTax" value={taxData.salary.deductions.professionalTax} dispatch={dispatch} helpText={salaryAdditionHelpText} />
-                        <IncomeTableRow label="Entertainment Allowance (Sec 16(ii))" path="salary.deductions.entertainmentAllowance" value={taxData.salary.deductions.entertainmentAllowance} dispatch={dispatch} helpText={salaryAdditionHelpText}/>
+                </table>
+            </Card>
+            <Card title="Disallowance of Deductions u/s 16">
+                <table className="w-full table-fixed mb-6">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="Professional Tax (Sec 16(iii))" path={`salary.deductions.professionalTax`} value={salary.deductions.professionalTax} dispatch={dispatch} helpText="Disallowance of deduction for professional tax." />
+                        <IncomeTableRow label="Entertainment Allowance (Sec 16(ii))" path={`salary.deductions.entertainmentAllowance`} value={salary.deductions.entertainmentAllowance} dispatch={dispatch} helpText="Disallowance of deduction for entertainment allowance (Govt. employees)." />
                     </tbody>
-                 </table>
-             
-                <div className="mt-6 border-t pt-4">
-                    <div className="flex justify-between items-center p-4 bg-gray-100 rounded-lg">
-                        <h3 className="text-lg font-bold text-gray-800">Total Income from Salary</h3>
-                        <span className="text-xl font-bold font-mono text-gray-900">
-                            ₹ {computationResult.breakdown.income.salary.assessed < 0 ? `(${formatCurrency(Math.abs(computationResult.breakdown.income.salary.assessed))})` : formatCurrency(computationResult.breakdown.income.salary.assessed)}
-                        </span>
-                    </div>
-                </div>
+                </table>
             </Card>
           </>
         );
       }
-      case 'House Property': return <Card title="Income from House Property Details">
-          <div className="flex items-center mb-4 p-3 bg-gray-50 rounded-md">
-              <input
-                  type="checkbox"
-                  id="isSelfOccupied"
-                  checked={taxData.houseProperty.isSelfOccupied}
-                  onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'houseProperty.isSelfOccupied', value: e.target.checked } })}
-                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <label htmlFor="isSelfOccupied" className="ml-2 block text-sm font-medium text-gray-900">
-                  Property is Self-Occupied
-              </label>
-          </div>
-          <table className="w-full table-fixed">
-                {tableHeader}
-                <tbody>
-                  <IncomeTableRow 
-                      label="Gross Rental Income" 
-                      path="houseProperty.grossRent" 
-                      value={taxData.houseProperty.grossRent} 
-                      dispatch={dispatch}
-                      disabled={taxData.houseProperty.isSelfOccupied}
-                      helpText={taxData.houseProperty.isSelfOccupied ? "Not applicable (GAV is nil for SOP)" : ""}
-                    />
-                  <IncomeTableRow 
-                      label="Municipal Taxes Paid" 
-                      path="houseProperty.municipalTaxes" 
-                      value={taxData.houseProperty.municipalTaxes} 
-                      dispatch={dispatch} 
-                      disabled={taxData.houseProperty.isSelfOccupied}
-                      helpText={taxData.houseProperty.isSelfOccupied ? "Not applicable for SOP" : ""}
-                  />
-                   <tr className="border-b bg-gray-50">
-                      <td className="p-2 align-top pt-3">
-                          <p className="font-medium text-sm text-gray-700">Net Annual Value (NAV)</p>
-                          <p className="text-xs text-gray-500">(Gross Rent - Municipal Taxes)</p>
-                      </td>
-                      <td className="p-2 align-top pt-3">
-                          <div className="p-2 bg-gray-200 rounded-md text-left font-mono">
-                              {formatCurrency(computationResult.breakdown.nav)}
-                          </div>
-                      </td>
-                  </tr>
-                  <tr className="border-b bg-gray-50">
-                      <td className="p-2 align-top pt-3">
-                          <p className="font-medium text-sm text-gray-700">Standard Deduction u/s 24(a)</p>
-                          <p className="text-xs text-gray-500">(30% of NAV)</p>
-                      </td>
-                      <td className="p-2 align-top pt-3">
-                          <div className="p-2 bg-gray-200 rounded-md text-left font-mono text-red-600">
-                              ({formatCurrency(computationResult.breakdown.standardDeduction24a)})
-                          </div>
-                      </td>
-                  </tr>
-                  <IncomeTableRow 
-                      label="Interest on Housing Loan (Sec 24(b))" 
-                      path="houseProperty.interestOnLoan" 
-                      value={taxData.houseProperty.interestOnLoan} 
-                      dispatch={dispatch}
-                      helpText={taxData.houseProperty.isSelfOccupied ? "Deduction is limited to ₹2,00,000" : "No limit on deduction for let-out property"}
-                    />
-              </tbody>
-            </table>
-            <div className="mt-6 border-t pt-4">
-              <div className="flex justify-between items-center p-4 bg-gray-100 rounded-lg">
-                  <h3 className="text-lg font-bold text-gray-800">Income / (Loss) from House Property</h3>
-                  <span className="text-xl font-bold font-mono text-gray-900">
-                      ₹ {computationResult.breakdown.income.houseProperty.assessed < 0 ? `(${formatCurrency(Math.abs(computationResult.breakdown.income.houseProperty.assessed))})` : formatCurrency(computationResult.breakdown.income.houseProperty.assessed)}
-                  </span>
-              </div>
-          </div>
-      </Card>;
-      case 'PGBP': {
-          const { pgbp } = taxData;
-          const isPresumptiveActive = pgbp.presumptiveScheme !== PresumptiveScheme.None;
-
-          const handleSchemeChange = (scheme: PresumptiveScheme) => {
-              dispatch({ type: 'UPDATE_FIELD', payload: { path: 'pgbp.presumptiveScheme', value: scheme } });
-          };
-
-          const renderPresumptiveInputs = () => {
-              switch(pgbp.presumptiveScheme) {
-                  case PresumptiveScheme.AD:
-                      return <div className="p-4 border rounded-md mt-4 bg-white">
-                          <h4 className="font-semibold text-gray-700">Sec 44AD - Small Businesses</h4>
-                          <p className="text-xs text-gray-500 mb-4">Turnover ≤ ₹2 crore. Income is 8% of turnover (6% for digital receipts).</p>
-                          <table className="w-full table-fixed"><tbody>
-                            <IncomeTableRow label="Turnover/Receipts (Digital)" path="pgbp.turnover44AD_digital" value={pgbp.turnover44AD_digital} dispatch={dispatch} />
-                            <IncomeTableRow label="Turnover/Receipts (Other)" path="pgbp.turnover44AD_other" value={pgbp.turnover44AD_other} dispatch={dispatch} />
-                          </tbody></table>
-                      </div>;
-                  case PresumptiveScheme.ADA:
-                      return <div className="p-4 border rounded-md mt-4 bg-white">
-                          <h4 className="font-semibold text-gray-700">Sec 44ADA - Specified Professionals</h4>
-                          <p className="text-xs text-gray-500 mb-4">Gross Receipts ≤ ₹50 lakh. Income is 50% of receipts.</p>
-                          <table className="w-full table-fixed"><tbody>
-                            <IncomeTableRow label="Gross Receipts" path="pgbp.grossReceipts44ADA" value={pgbp.grossReceipts44ADA} dispatch={dispatch} />
-                          </tbody></table>
-                      </div>;
-                  case PresumptiveScheme.AE:
-                      return <div className="p-4 border rounded-md mt-4 bg-white">
-                          <h4 className="font-semibold text-gray-700">Sec 44AE - Goods Carriage Business</h4>
-                          <p className="text-xs text-gray-500 mb-4">Max 10 vehicles. Income: ₹7,500/month (light vehicle) or ₹1,000/ton/month (heavy vehicle).</p>
-                          <table className="w-full text-sm text-left">
-                              <thead className="bg-gray-100"><tr>
-                                  <th className="p-2">Vehicle Type</th><th className="p-2">Tonnage (if heavy)</th><th className="p-2">Months Owned</th><th className="p-2">Actions</th>
-                              </tr></thead>
-                              <tbody>
-                                  {pgbp.vehicles44AE.map(v => <tr key={v.id} className="border-b">
-                                      <td className="p-2"><select value={v.type} onChange={e => dispatch({ type: 'UPDATE_VEHICLE', payload: { id: v.id, field: 'type', value: e.target.value }})} className="p-1 border rounded w-full"><option value="other">Other Vehicle</option><option value="heavy">Heavy Vehicle</option></select></td>
-                                      <td className="p-2"><input type="number" value={v.tonnage ?? ''} disabled={v.type !== 'heavy'} onChange={e => dispatch({ type: 'UPDATE_VEHICLE', payload: { id: v.id, field: 'tonnage', value: e.target.value ? parseFloat(e.target.value) : null }})} className={`p-1 border rounded w-full ${v.type !== 'heavy' ? 'bg-gray-200' : ''}`} /></td>
-                                      <td className="p-2"><input type="number" min="0" max="12" value={v.months ?? ''} onChange={e => dispatch({ type: 'UPDATE_VEHICLE', payload: { id: v.id, field: 'months', value: e.target.value ? parseInt(e.target.value) : null }})} className="p-1 border rounded w-full" /></td>
-                                      <td className="p-2"><button onClick={() => dispatch({type: 'REMOVE_VEHICLE', payload: {id: v.id}})} className="text-red-500 p-1">Remove</button></td>
-                                  </tr>)}
-                              </tbody>
-                          </table>
-                          <button onClick={() => dispatch({type: 'ADD_VEHICLE'})} className="mt-4 bg-blue-500 text-white px-3 py-1 text-sm rounded hover:bg-blue-600">Add Vehicle</button>
-                      </div>;
-                   case PresumptiveScheme.B:
-                        return <div className="p-4 border rounded-md mt-4 bg-white">
-                            <h4 className="font-semibold text-gray-700">Sec 44B - Non-resident Shipping</h4>
-                            <p className="text-xs text-gray-500 mb-4">Income is 7.5% of aggregate receipts.</p>
-                            <table className="w-full table-fixed"><tbody><IncomeTableRow label="Aggregate Receipts" path="pgbp.aggregateReceipts44B" value={pgbp.aggregateReceipts44B} dispatch={dispatch} /></tbody></table>
-                        </div>;
-                   case PresumptiveScheme.BB:
-                        return <div className="p-4 border rounded-md mt-4 bg-white">
-                            <h4 className="font-semibold text-gray-700">Sec 44BB - Non-resident (Mineral Oils)</h4>
-                            <p className="text-xs text-gray-500 mb-4">Income is 10% of aggregate receipts.</p>
-                            <table className="w-full table-fixed"><tbody><IncomeTableRow label="Aggregate Receipts" path="pgbp.aggregateReceipts44BB" value={pgbp.aggregateReceipts44BB} dispatch={dispatch} /></tbody></table>
-                        </div>;
-                   case PresumptiveScheme.BBA:
-                        return <div className="p-4 border rounded-md mt-4 bg-white">
-                            <h4 className="font-semibold text-gray-700">Sec 44BBA - Non-resident (Aircraft)</h4>
-                            <p className="text-xs text-gray-500 mb-4">Income is 5% of aggregate receipts.</p>
-                            <table className="w-full table-fixed"><tbody><IncomeTableRow label="Aggregate Receipts" path="pgbp.aggregateReceipts44BBA" value={pgbp.aggregateReceipts44BBA} dispatch={dispatch} /></tbody></table>
-                        </div>;
-                   case PresumptiveScheme.BBB:
-                        return <div className="p-4 border rounded-md mt-4 bg-white">
-                            <h4 className="font-semibold text-gray-700">Sec 44BBB - Foreign Co. (Turnkey Power Projects)</h4>
-                            <p className="text-xs text-gray-500 mb-4">Income is 10% of aggregate receipts.</p>
-                            <table className="w-full table-fixed"><tbody><IncomeTableRow label="Aggregate Receipts" path="pgbp.aggregateReceipts44BBB" value={pgbp.aggregateReceipts44BBB} dispatch={dispatch} /></tbody></table>
-                        </div>;
-                  default: return null;
-              }
-          }
-
-          return (
-              <Card title="Profits and Gains of Business or Profession Details">
-                   {taxData.residentialStatus === 'resident_not_ordinarily_resident' && (
-                        <div className="flex items-center mb-4 p-3 bg-yellow-50 rounded-md border border-yellow-200">
-                            <input
-                                type="checkbox"
-                                id="isControlledFromIndia"
-                                checked={taxData.pgbp.isControlledFromIndia}
-                                onChange={e => dispatch({ type: 'UPDATE_FIELD', payload: { path: 'pgbp.isControlledFromIndia', value: e.target.checked } })}
-                                className="h-4 w-4 rounded border-gray-300 text-yellow-600 focus:ring-yellow-500"
-                            />
-                            <label htmlFor="isControlledFromIndia" className="ml-3 block text-sm font-medium text-yellow-800">
-                                For business income from 'Outside India', is the business controlled from India?
-                                <span className="block text-xs"> (Relevant for RNOR status)</span>
-                            </label>
-                        </div>
-                   )}
-                  <div className="p-4 bg-gray-50 rounded-lg mb-6">
-                      <h3 className="font-semibold text-lg mb-3 text-gray-800">Taxation Method</h3>
-                      <div className="flex items-center gap-6">
-                          <label className="flex items-center cursor-pointer"><input type="radio" name="pgbpMethod" checked={!isPresumptiveActive} onChange={() => handleSchemeChange(PresumptiveScheme.None)} className="h-4 w-4" /><span className="ml-2">Regular PGBP Calculation</span></label>
-                          <label className="flex items-center cursor-pointer"><input type="radio" name="pgbpMethod" checked={isPresumptiveActive} onChange={() => handleSchemeChange(PresumptiveScheme.AD)} className="h-4 w-4" /><span className="ml-2">Presumptive Taxation</span></label>
-                      </div>
-                      {isPresumptiveActive && (
-                          <div className="mt-4">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">Select Presumptive Scheme</label>
-                              <select value={pgbp.presumptiveScheme} onChange={e => handleSchemeChange(e.target.value as PresumptiveScheme)} className="w-full p-2 border rounded-md">
-                                  <option value={PresumptiveScheme.AD}>44AD - Small Business</option>
-                                  <option value={PresumptiveScheme.ADA}>44ADA - Specified Professionals</option>
-                                  <option value={PresumptiveScheme.AE}>44AE - Goods Carriage</option>
-                                  <option value={PresumptiveScheme.B}>44B - Non-resident Shipping</option>
-                                  <option value={PresumptiveScheme.BB}>44BB - Non-resident Mineral Oils</option>
-                                  <option value={PresumptiveScheme.BBA}>44BBA - Non-resident Aircraft Operation</option>
-                                  <option value={PresumptiveScheme.BBB}>44BBB - Foreign Co. Turnkey Power Projects</option>
-                              </select>
-                          </div>
-                      )}
-                  </div>
-
-                  {isPresumptiveActive && <div className="mb-6">{renderPresumptiveInputs()}</div>}
-
-                  <div className={`transition-opacity ${isPresumptiveActive ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
-                      <h3 className="font-bold text-md text-gray-800 mb-2 pt-4 border-t">Regular PGBP Calculation</h3>
-                      {isPresumptiveActive && <p className="text-sm text-gray-500 mb-4 italic">Disabled because a presumptive scheme is selected.</p>}
-                      <table className="w-full table-fixed mb-6">
-                          {tableHeader}
-                          <tbody>
-                              <IncomeTableRow label="Net Profit as per Books (Non-Speculative)" path="pgbp.netProfit" value={pgbp.netProfit} dispatch={dispatch} disabled={isPresumptiveActive} />
-                          </tbody>
-                      </table>
-                      <h3 className="font-bold text-md text-gray-800 mt-6 mb-2 pt-4 border-t">Additions / Disallowances</h3>
-                      <table className="w-full table-fixed">
-                          {tableHeader}
-                          <tbody>
-                            <IncomeTableRow label="Unreported / Unrecorded Sales or Receipts" path="pgbp.additions.unreportedSales" value={taxData.pgbp.additions.unreportedSales} dispatch={dispatch} helpText="Point 10" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Unaccounted Business Income" path="pgbp.additions.unaccountedBusinessIncome" value={taxData.pgbp.additions.unaccountedBusinessIncome} dispatch={dispatch} helpText="Point 17" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Bogus Purchases / Hawala Transactions" path="pgbp.additions.bogusPurchases" value={taxData.pgbp.additions.bogusPurchases} dispatch={dispatch} helpText="Point 19" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Unrecorded Advances, Loans, Credits" path="pgbp.additions.unrecordedCredits" value={taxData.pgbp.additions.unrecordedCredits} dispatch={dispatch} helpText="Point 20" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="GP/NP Ratio Difference" path="pgbp.additions.gpNpRatioDifference" value={taxData.pgbp.additions.gpNpRatioDifference} dispatch={dispatch} helpText="Point 18" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Stock Suppression / Valuation Difference" path="pgbp.additions.stockSuppression" value={taxData.pgbp.additions.stockSuppression} dispatch={dispatch} helpText="Point 11" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Incorrect Depreciation Claim (Sec 32)" path="pgbp.additions.incorrectDepreciation" value={taxData.pgbp.additions.incorrectDepreciation} dispatch={dispatch} helpText="Point 12" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Personal Expenses (Sec 37(1) Proviso)" path="pgbp.additions.disallowance37_1_personal" value={taxData.pgbp.additions.disallowance37_1_personal} dispatch={dispatch} helpText="Point 2" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Capital Expenditure (Sec 37(1))" path="pgbp.additions.disallowance37_1_capital" value={taxData.pgbp.additions.disallowance37_1_capital} dispatch={dispatch} helpText="Point 3" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Expenses not for Business (Sec 37(1))" path="pgbp.additions.disallowance37_1_nonBusiness" value={taxData.pgbp.additions.disallowance37_1_nonBusiness} dispatch={dispatch} helpText="Point 1" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Provision for Doubtful Debts (Sec 36(1)(vii))" path="pgbp.additions.disallowance36_1_vii_provisions" value={taxData.pgbp.additions.disallowance36_1_vii_provisions} dispatch={dispatch} helpText="Point 13" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Interest on Interest-Free Loans to Relatives (Sec 36(1)(iii))" path="pgbp.additions.disallowance36_1_iii_interest" value={taxData.pgbp.additions.disallowance36_1_iii_interest} dispatch={dispatch} helpText="Point 14" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Late Employees' PF/ESI Contribution (Sec 36(1)(va))" path="pgbp.additions.disallowance36_employeeContrib" value={taxData.pgbp.additions.disallowance36_employeeContrib} dispatch={dispatch} helpText="Point 16" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="TDS Non-compliance (Sec 40(a))" path="pgbp.additions.disallowance40a_tds" value={taxData.pgbp.additions.disallowance40a_tds} dispatch={dispatch} helpText="Point 4" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Partner Remuneration/Interest (Sec 40(b))" path="pgbp.additions.disallowance40b_partnerPayments" value={taxData.pgbp.additions.disallowance40b_partnerPayments} dispatch={dispatch} helpText="Point 8" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Related Party Payments (Sec 40A(2))" path="pgbp.additions.disallowance40A2_relatedParty" value={taxData.pgbp.additions.disallowance40A2_relatedParty} dispatch={dispatch} disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Cash Payments > ₹10,000 (Sec 40A(3))" path="pgbp.additions.disallowance40A3_cashPayment" value={taxData.pgbp.additions.disallowance40A3_cashPayment} dispatch={dispatch} helpText="Point 5" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Unapproved Gratuity Provision (Sec 40A(7))" path="pgbp.additions.disallowance40A7_gratuity" value={taxData.pgbp.additions.disallowance40A7_gratuity} dispatch={dispatch} helpText="Point 6" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Contribution to Unapproved Funds (Sec 40A(9))" path="pgbp.additions.disallowance40A9_unapprovedFunds" value={taxData.pgbp.additions.disallowance40A9_unapprovedFunds} dispatch={dispatch} helpText="Point 7" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Statutory Dues Unpaid (Sec 43B)" path="pgbp.additions.disallowance43B_statutoryDues" value={taxData.pgbp.additions.disallowance43B_statutoryDues} dispatch={dispatch} disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Expenses for Exempt Income (Sec 14A)" path="pgbp.additions.disallowance14A_exemptIncome" value={taxData.pgbp.additions.disallowance14A_exemptIncome} dispatch={dispatch} helpText="Point 15" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Unexplained/Unvouched Expenditure" path="pgbp.additions.unexplainedExpenditure" value={taxData.pgbp.additions.unexplainedExpenditure} dispatch={dispatch} helpText="Point 9" disabled={isPresumptiveActive} />
-                            <IncomeTableRow label="Other Disallowances" path="pgbp.additions.otherDisallowances" value={taxData.pgbp.additions.otherDisallowances} dispatch={dispatch} disabled={isPresumptiveActive} />
-                          </tbody>
-                      </table>
-                  </div>
-
-                   <h3 className="font-bold text-md text-gray-800 mt-6 mb-2 pt-4 border-t">Speculative Income</h3>
-                   <table className="w-full table-fixed mb-6">
-                        {tableHeader}
-                        <tbody>
-                            <IncomeTableRow label="Speculative Business Income (Sec 43(5))" path="pgbp.speculativeIncome" value={pgbp.speculativeIncome} dispatch={dispatch} />
-                        </tbody>
-                    </table>
-
-                  <div className="mt-6 border-t pt-4">
-                      <div className="flex justify-between items-center p-4 bg-gray-100 rounded-lg">
-                          <h3 className="text-lg font-bold text-gray-800">Total Income from PGBP</h3>
-                          <span className="text-xl font-bold font-mono text-gray-900">
-                              ₹ {formatCurrency(computationResult.breakdown.income.pgbp.assessed)}
-                          </span>
-                      </div>
-                  </div>
-              </Card>
-          );
-      }
-      case 'Capital Gains': {
-          return <Card title="Capital Gains Details">
-            <table className="w-full table-fixed">
-                {tableHeader}
-                <tbody>
-                  <IncomeTableRow label="STCG (Sec 111A)" path="capitalGains.stcg111A" value={taxData.capitalGains.stcg111A} dispatch={dispatch} helpText="Taxable @ 15%"/>
-                  <IncomeTableRow label="STCG (Other)" path="capitalGains.stcgOther" value={taxData.capitalGains.stcgOther} dispatch={dispatch} helpText="Taxable at normal rates"/>
-                  <IncomeTableRow label="LTCG (Sec 112A)" path="capitalGains.ltcg112A" value={taxData.capitalGains.ltcg112A} dispatch={dispatch} helpText="Taxable @ 10% > 1 Lakh"/>
-                  <IncomeTableRow label="LTCG (Other)" path="capitalGains.ltcgOther" value={taxData.capitalGains.ltcgOther} dispatch={dispatch} helpText="Taxable @ 20%"/>
-                  <IncomeTableRow label="Deemed Gain (Sec 50C)" path="capitalGains.adjustment50C" value={taxData.capitalGains.adjustment50C} dispatch={dispatch} />
-                  <IncomeTableRow label="Deemed STCG on Depreciable Assets (Sec 50)" path="capitalGains.adjustment50" value={taxData.capitalGains.adjustment50} dispatch={dispatch} />
-                  <IncomeTableRow label="Deemed Gain (Sec 50CA - Unlisted Shares)" path="capitalGains.adjustment50CA" value={taxData.capitalGains.adjustment50CA} dispatch={dispatch} />
-                  <IncomeTableRow label="Deemed Gain (Sec 50D - Indeterminable Consideration)" path="capitalGains.adjustment50D" value={taxData.capitalGains.adjustment50D} dispatch={dispatch} />
-                  <IncomeTableRow label="Deemed Business Income (Sec 43CA - Stock-in-Trade)" path="capitalGains.adjustment43CA" value={taxData.capitalGains.adjustment43CA} dispatch={dispatch} helpText="Note: This is taxed under PGBP but entered here for convenience." />
-                  <IncomeTableRow label="Disallowed Cost of Improvement" path="capitalGains.costOfImprovement" value={taxData.capitalGains.costOfImprovement} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54" path="capitalGains.exemption54" value={taxData.capitalGains.exemption54} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54B (against LTCG)" path="capitalGains.exemption54B_ltcg" value={taxData.capitalGains.exemption54B_ltcg} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54B (against STCG)" path="capitalGains.exemption54B_stcg" value={taxData.capitalGains.exemption54B_stcg} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54D" path="capitalGains.exemption54D" value={taxData.capitalGains.exemption54D} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54EC" path="capitalGains.exemption54EC" value={taxData.capitalGains.exemption54EC} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54EE" path="capitalGains.exemption54EE" value={taxData.capitalGains.exemption54EE} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54F" path="capitalGains.exemption54F" value={taxData.capitalGains.exemption54F} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54G" path="capitalGains.exemption54G" value={taxData.capitalGains.exemption54G} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54GA" path="capitalGains.exemption54GA" value={taxData.capitalGains.exemption54GA} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54GB" path="capitalGains.exemption54GB" value={taxData.capitalGains.exemption54GB} dispatch={dispatch} />
-              </tbody>
-            </table>
-             <div className="mt-6 border-t pt-4">
-                <div className="flex justify-between items-center p-4 bg-gray-100 rounded-lg">
-                    <h3 className="text-lg font-bold text-gray-800">Total Additions under Capital Gains</h3>
-                    <span className="text-xl font-bold font-mono text-gray-900">
-                        ₹ {formatCurrency(totalCapitalGainsAdditions)}
-                    </span>
+      case 'House Property':
+        return (<>
+          {taxData.houseProperty.map((hp, index) => (
+            <Card 
+                key={hp.id} 
+                title={
+                    <div className="flex justify-between items-center">
+                        <span>House Property {index + 1}</span>
+                        {taxData.houseProperty.length > 1 &&
+                            <button 
+                                onClick={() => dispatch({ type: 'REMOVE_HOUSE_PROPERTY', payload: { id: hp.id } })} 
+                                className="text-sm bg-red-500 text-white px-3 py-1 rounded-md hover:bg-red-600 no-print"
+                            >
+                                Remove
+                            </button>
+                        }
+                    </div>
+                }
+            >
+                <div className="mb-4">
+                    <label className="flex items-center">
+                        <input 
+                            type="checkbox" 
+                            checked={hp.isSelfOccupied}
+                            onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: `houseProperty.${index}.isSelfOccupied`, value: e.target.checked}})}
+                            className="h-4 w-4 rounded"
+                        />
+                        <span className="ml-2 text-sm font-medium">This property is Self-Occupied (SOP)</span>
+                    </label>
                 </div>
-            </div>
-      </Card>;
-    }
-      case 'Other Sources': {
-        const totalHeadIncome = computationResult.breakdown.income.otherSources.assessed +
-                              computationResult.breakdown.income.winnings.assessed +
-                              computationResult.breakdown.income.deemed;
-        return <>
-            <Card title="Income from Other Sources Details">
-              <table className="w-full table-fixed mb-6">
-                    {tableHeader}
-                    <tbody>
-                      <IncomeTableRow label="Other Incomes (Interest, etc.)" path="otherSources.otherIncomes" value={taxData.otherSources.otherIncomes} dispatch={dispatch} />
-                      <IncomeTableRow label="Family Pension" path="otherSources.familyPension" value={taxData.otherSources.familyPension} dispatch={dispatch} helpText="Deduction is 1/3rd or ₹15,000, whichever is less"/>
-                      <IncomeTableRow label="Interest on Enhanced Compensation" path="otherSources.interestOnEnhancedCompensation" value={taxData.otherSources.interestOnEnhancedCompensation} dispatch={dispatch} helpText="50% is deductible u/s 57(iv)"/>
-                      <IncomeTableRow label="Income from Owning & Maintaining Race Horses" path="otherSources.raceHorseIncome" value={taxData.otherSources.raceHorseIncome} dispatch={dispatch} />
-                      <IncomeTableRow label="Winnings from Lottery, etc." path="otherSources.winnings" value={taxData.otherSources.winnings} dispatch={dispatch} helpText="Taxable @ 30%" />
-                      <IncomeTableRow label="Deemed Dividend (Sec 2(22)(e))" path="otherSources.deemedDividend2_22_e" value={taxData.otherSources.deemedDividend2_22_e} dispatch={dispatch} />
-                      <IncomeTableRow label="Gifts (Sec 56(2)(x))" path="otherSources.gifts56_2_x" value={taxData.otherSources.gifts56_2_x} dispatch={dispatch} helpText="Taxable if aggregate > ₹50,000"/>
-                      <IncomeTableRow label="Agricultural Income (for rate purposes)" path="otherSources.exemptIncome" value={taxData.otherSources.exemptIncome} dispatch={dispatch} />
-                      <IncomeTableRow label="Disallowance u/s 14A" path="otherSources.disallowance14A" value={taxData.otherSources.disallowance14A} dispatch={dispatch} />
-                  </tbody>
-              </table>
-            </Card>
-            <Card title="Deemed Income (Taxable at Special Rates u/s 115BBE)">
+
                 <table className="w-full table-fixed">
-                    {tableHeader}
+                    {tableHeader()}
                     <tbody>
-                      <IncomeTableRow label="Unexplained Cash Credits (Sec 68)" path="deemedIncome.sec68_cashCredits" value={taxData.deemedIncome.sec68_cashCredits} dispatch={dispatch} />
-                      <IncomeTableRow label="Unexplained Investments (Sec 69)" path="deemedIncome.sec69_unexplainedInvestments" value={taxData.deemedIncome.sec69_unexplainedInvestments} dispatch={dispatch} />
-                      <IncomeTableRow label="Unexplained Money, etc. (Sec 69A)" path="deemedIncome.sec69A_unexplainedMoney" value={taxData.deemedIncome.sec69A_unexplainedMoney} dispatch={dispatch} />
-                      <IncomeTableRow label="Investments not fully disclosed (Sec 69B)" path="deemedIncome.sec69B_investmentsNotDisclosed" value={taxData.deemedIncome.sec69B_investmentsNotDisclosed} dispatch={dispatch} />
-                      <IncomeTableRow label="Unexplained Expenditure (Sec 69C)" path="deemedIncome.sec69C_unexplainedExpenditure" value={taxData.deemedIncome.sec69C_unexplainedExpenditure} dispatch={dispatch} />
-                      <IncomeTableRow label="Hundi Borrowings (Sec 69D)" path="deemedIncome.sec69D_hundiBorrowing" value={taxData.deemedIncome.sec69D_hundiBorrowing} dispatch={dispatch} />
+                        <IncomeTableRow label="Gross Rent Received / Receivable" path={`houseProperty.${index}.grossRent`} value={hp.grossRent} dispatch={dispatch} disabled={hp.isSelfOccupied} />
+                        <IncomeTableRow label="Municipal Taxes Paid" path={`houseProperty.${index}.municipalTaxes`} value={hp.municipalTaxes} dispatch={dispatch} disabled={hp.isSelfOccupied} />
+                        <CalculatedDisplayRow 
+                            label="Net Annual Value (NAV)" 
+                            value={hp.isSelfOccupied ? 0 : Math.max(0, getIncomeSourceAmount(hp.grossRent) - getIncomeSourceAmount(hp.municipalTaxes))}
+                        />
+                         <CalculatedDisplayRow 
+                            label="Less: Standard Deduction u/s 24(a) (30% of NAV)" 
+                            value={hp.isSelfOccupied ? 0 : Math.max(0, getIncomeSourceAmount(hp.grossRent) - getIncomeSourceAmount(hp.municipalTaxes)) * 0.3}
+                        />
+                        <IncomeTableRow label="Interest on Borrowed Capital u/s 24(b)" path={`houseProperty.${index}.interestOnLoan`} value={hp.interestOnLoan} dispatch={dispatch} />
                     </tbody>
                 </table>
-                 <div className="mt-6 border-t pt-4">
-                    <div className="space-y-2 p-4 bg-amber-50 rounded-lg">
-                        <div className="flex justify-between font-semibold">
-                            <span>Total Deemed Income</span>
-                            <span className="font-mono">₹ {formatCurrency(computationResult.breakdown.income.deemed)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span>Tax @ 60%</span>
-                            <span className="font-mono">₹ {formatCurrency(computationResult.breakdown.income.deemed * 0.60)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                            <span>Surcharge @ 25% on Tax</span>
-                            <span className="font-mono">₹ {formatCurrency(computationResult.breakdown.income.deemed * 0.60 * 0.25)}</span>
-                        </div>
-                        <div className="flex justify-between border-t pt-2 mt-2 font-bold text-red-700">
-                            <span>Tax on Deemed Income (excluding Cess)</span>
-                            <span className="font-mono">₹ {formatCurrency(computationResult.breakdown.tax.onDeemedIncome)}</span>
-                        </div>
-                    </div>
-                </div>
             </Card>
-            <div className="mt-6">
-                <div className="flex justify-between items-center p-4 bg-blue-100 rounded-lg shadow">
-                    <h3 className="text-lg font-bold text-blue-800">Total Income Addition under 'Other Sources' Head</h3>
-                    <span className="text-xl font-bold font-mono text-blue-900">
-                        ₹ {formatCurrency(totalHeadIncome)}
-                    </span>
+          ))}
+          <div className="flex justify-start no-print">
+            <button 
+                onClick={() => dispatch({ type: 'ADD_HOUSE_PROPERTY' })} 
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+            >
+                + Add Another Property
+            </button>
+          </div>
+        </>
+        );
+      case 'PGBP': {
+        const { pgbp } = taxData;
+        const isPresumptive = pgbp.presumptiveScheme !== PresumptiveScheme.None;
+        return (<>
+            <Card title="Business Details">
+                 <RadioGroup label="Is the business/profession controlled from India?" path="pgbp.isControlledFromIndia" value={pgbp.isControlledFromIndia} dispatch={dispatch} />
+            </Card>
+            <Card title="Profits and Gains of Business or Profession (PGBP)">
+                 <div className="mb-6">
+                    <label className="block text-gray-600 font-medium text-sm mb-1">Taxation Scheme</label>
+                    <select value={pgbp.presumptiveScheme} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'pgbp.presumptiveScheme', value: e.target.value}})} className="w-full p-2 border rounded-md">
+                        <option value={PresumptiveScheme.None}>Regular / Normal Provisions</option>
+                        <option value={PresumptiveScheme.AD}>Presumptive u/s 44AD</option>
+                        <option value={PresumptiveScheme.ADA}>Presumptive u/s 44ADA</option>
+                        <option value={PresumptiveScheme.AE}>Presumptive u/s 44AE</option>
+                        <option value={PresumptiveScheme.B}>Presumptive u/s 44B (Shipping)</option>
+                        <option value={PresumptiveScheme.BB}>Presumptive u/s 44BB (Mineral Oils)</option>
+                        <option value={PresumptiveScheme.BBA}>Presumptive u/s 44BBA (Aircraft)</option>
+                        <option value={PresumptiveScheme.BBB}>Presumptive u/s 44BBB (Civil Construction)</option>
+                    </select>
                 </div>
-            </div>
-          </>;
-        }
-      case 'International Income': {
-        const { internationalIncome } = taxData;
-        const { international: intlResult } = computationResult.breakdown.income;
+                
+                {pgbp.presumptiveScheme === PresumptiveScheme.None && (
+                    <table className="w-full table-fixed">
+                        {tableHeader()}
+                        <tbody>
+                            <IncomeTableRow label="Net Profit as per P&L Account" path="pgbp.netProfit" value={pgbp.netProfit} dispatch={dispatch} helpText="Enter the base profit to which additions will be made."/>
+                        </tbody>
+                    </table>
+                )}
 
-        const handleUpdate = (id: string, path: string, value: any) => {
-            dispatch({ type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: { id, path, value } });
-        };
-        
-        const DTAA_ARTICLE_MAP: { [key in InternationalIncomeNature]?: string } = {
-            [InternationalIncomeNature.Salary]: '15',
-            [InternationalIncomeNature.InterestIncome]: '11',
-            [InternationalIncomeNature.Dividend]: '10',
-            [InternationalIncomeNature.Royalty]: '12',
-            [InternationalIncomeNature.FeesForTechnicalServices]: '12',
-            [InternationalIncomeNature.BusinessProfessionalIncome]: '7',
-            [InternationalIncomeNature.LongTermCapitalGain]: '13',
-            [InternationalIncomeNature.ShortTermCapitalGain]: '13',
-            [InternationalIncomeNature.HouseProperty]: '6',
-            [InternationalIncomeNature.Others]: '21',
-        };
+                 {pgbp.presumptiveScheme === PresumptiveScheme.AD && (
+                    <table className="w-full table-fixed">
+                        {tableHeader()}
+                        <tbody>
+                            <IncomeTableRow label="Turnover (Digital/Banking)" path="pgbp.turnover44AD_digital" value={pgbp.turnover44AD_digital} dispatch={dispatch} helpText="Taxable at 6%"/>
+                            <IncomeTableRow label="Turnover (Other)" path="pgbp.turnover44AD_other" value={pgbp.turnover44AD_other} dispatch={dispatch} helpText="Taxable at 8%"/>
+                        </tbody>
+                    </table>
+                )}
 
-        const handleNatureChange = (id: string, newNature: InternationalIncomeNature) => {
-            let defaultSection: InternationalIncomeItem['specialSection'] = 'None';
-            switch (newNature) {
-                case InternationalIncomeNature.Royalty:
-                case InternationalIncomeNature.FeesForTechnicalServices:
-                case InternationalIncomeNature.InterestIncome:
-                case InternationalIncomeNature.Dividend:
-                    defaultSection = '115A';
-                    break;
-            }
-            const defaultArticle = DTAA_ARTICLE_MAP[newNature] || '';
-            
-            dispatch({ type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: { id, path: 'nature', value: newNature } });
-            dispatch({ type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: { id, path: 'specialSection', value: defaultSection } });
-            dispatch({ type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: { id, path: 'applicableDtaaArticle', value: defaultArticle } });
-        }
-
-        const natureOptions = Object.values(InternationalIncomeNature).map(value => ({
-            value: value,
-            label: value
-        }));
-        
-        return (
-            <Card title="International Income & Foreign Tax Credit (Form 67)">
-              <div className="space-y-6">
-                {internationalIncome.map((item, index) => (
-                    <div key={item.id} className="border p-4 rounded-lg bg-gray-50/50 relative shadow-sm">
-                        <div className="flex justify-between items-start mb-4">
-                            <h3 className="font-bold text-md text-gray-800">Foreign Income Source #{index + 1}</h3>
-                             <button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-1 text-2xl leading-none" aria-label="Remove Foreign Income Item">&times;</button>
-                        </div>
-                        
-                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                            <FormField label="Country / Specified Territory">
-                                <input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-2 border rounded-md text-sm" />
-                            </FormField>
-                            <FormField label="Source of Income">
-                                <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-2 border rounded-md text-sm">
-                                    {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                 {pgbp.presumptiveScheme === PresumptiveScheme.ADA && (
+                    <table className="w-full table-fixed">
+                        {tableHeader()}
+                        <tbody>
+                            <IncomeTableRow label="Gross Receipts" path="pgbp.grossReceipts44ADA" value={pgbp.grossReceipts44ADA} dispatch={dispatch} helpText="Taxable at 50%"/>
+                        </tbody>
+                    </table>
+                )}
+                 {pgbp.presumptiveScheme === PresumptiveScheme.AE && (
+                   <div className="border rounded-lg p-4">
+                     <h3 className="font-semibold mb-2">Vehicles u/s 44AE</h3>
+                     {pgbp.vehicles44AE.map(v => (
+                        <div key={v.id} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end mb-4 p-3 bg-gray-50 rounded">
+                            <FormField label="Vehicle Type">
+                                <select value={v.type} onChange={e => dispatch({type: 'UPDATE_VEHICLE', payload: {id: v.id, field: 'type', value: e.target.value}})} className="p-2 border rounded-md w-full">
+                                    <option value="heavy">Heavy Goods Vehicle</option>
+                                    <option value="other">Other Vehicle</option>
                                 </select>
                             </FormField>
-                            <FormField label="Income outside India (INR)">
-                                <input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
+                             <FormField label="Tonnage (for Heavy)">
+                                 <input type="number" value={v.tonnage ?? ''} onChange={e => dispatch({type: 'UPDATE_VEHICLE', payload: {id: v.id, field: 'tonnage', value: parseInt(e.target.value) || null }})} disabled={v.type !== 'heavy'} className="p-2 border rounded-md w-full disabled:bg-gray-200" />
                             </FormField>
-                            <FormField label="Tax paid outside India (INR)">
-                                <input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
+                             <FormField label="No. of Months">
+                                 <input type="number" min="0" max="12" value={v.months ?? ''} onChange={e => dispatch({type: 'UPDATE_VEHICLE', payload: {id: v.id, field: 'months', value: parseInt(e.target.value) || null }})} className="p-2 border rounded-md w-full" />
                             </FormField>
-                             <FormField label="Tax payable u/s 115JB/JC">
-                                <input type="text" value={formatInputValue(item.taxPayableUnder115JBJC)} onChange={e => handleUpdate(item.id, 'taxPayableUnder115JBJC', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
-                            </FormField>
-                            <div className="flex items-center gap-3 bg-white p-2 border rounded-md h-full mt-auto mb-1">
-                                <input type="checkbox" id={`form67Filed_${item.id}`} checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4" />
-                                <label htmlFor={`form67Filed_${item.id}`} className="text-sm font-medium text-gray-700">Form 67 Filed?</label>
+                            <div className="font-mono bg-white p-2 rounded-md text-sm text-center">
+                               {formatCurrency(v.type === 'heavy' ? (v.tonnage ?? 0) * (v.months ?? 0) * 1000 : (v.months ?? 0) * 7500)}
                             </div>
+                            <button onClick={() => dispatch({type: 'REMOVE_VEHICLE', payload: {id: v.id}})} className="bg-red-500 text-white px-3 py-2 rounded-md h-10">Remove</button>
                         </div>
-
-                        <div className="border-t pt-4 mt-4">
-                            <h4 className="font-semibold text-gray-700 mb-2">Foreign Tax Credit Details</h4>
-                            <div className="flex items-center gap-3 bg-white p-2 border rounded-md mb-3">
-                                <input type="checkbox" id={`dtaaApplicable_${item.id}`} checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4" />
-                                <label htmlFor={`dtaaApplicable_${item.id}`} className="text-sm font-medium text-gray-700">DTAA is Applicable (Credit u/s 90/90A)</label>
-                            </div>
-                            {item.dtaaApplicable && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <FormField label="Article No. of DTAA">
-                                    <input type="text" value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} className="w-full p-2 border rounded-md text-sm" />
-                                </FormField>
-                                <FormField label="Rate as per DTAA (%)">
-                                     <input type="number" step="any" value={item.taxRateAsPerDtaa != null ? Number((item.taxRateAsPerDtaa * 100).toPrecision(12)) : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} className="w-full p-2 border rounded-md text-sm text-left" />
-                                </FormField>
-                            </div>}
-                        </div>
-                        <div className="border-t pt-4 mt-4">
-                             <h4 className="font-semibold text-gray-700 mb-2">Part B Details</h4>
-                             <div className="space-y-3">
-                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
-                                    <input type="checkbox" id={`refundClaimed_${item.id}`} checked={item.refundClaimed} onChange={e => handleUpdate(item.id, 'refundClaimed', e.target.checked)} className="h-4 w-4" />
-                                    <label htmlFor={`refundClaimed_${item.id}`} className="text-sm font-medium text-gray-700">Has any refund of foreign tax been claimed?</label>
-                                </div>
-                                {item.refundClaimed && <div className="p-3 border rounded-md bg-white ml-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <FormField label="Accounting year of loss"><input type="text" value={item.refundDetails?.lossYear ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.lossYear', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
-                                    <FormField label="Year(s) of set-off"><input type="text" value={item.refundDetails?.setOffYear ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.setOffYear', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
-                                    <FormField label="Refund claimed (₹)"><input type="text" value={formatInputValue(item.refundDetails?.refundAmount)} onChange={e => handleUpdate(item.id, 'refundDetails.refundAmount', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" /></FormField>
-                                    <FormField label="Previous year it relates to"><input type="text" value={item.refundDetails?.previousYearRelates ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.previousYearRelates', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
-                                </div>}
-
-                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
-                                    <input type="checkbox" id={`creditDisputed_${item.id}`} checked={item.creditUnderDispute} onChange={e => handleUpdate(item.id, 'creditUnderDispute', e.target.checked)} className="h-4 w-4" />
-                                    <label htmlFor={`creditDisputed_${item.id}`} className="text-sm font-medium text-gray-700">Is the foreign tax credit under dispute?</label>
-                                </div>
-                                {item.creditUnderDispute && <div className="p-3 border rounded-md bg-white ml-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                     <FormField label="Nature and amount of income in dispute"><input type="text" value={item.disputeDetails?.natureAndAmountOfIncome ?? ''} onChange={e => handleUpdate(item.id, 'disputeDetails.natureAndAmountOfIncome', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
-                                     <FormField label="Amount of tax in dispute (₹)"><input type="text" value={formatInputValue(item.disputeDetails?.amountOfTaxDisputed)} onChange={e => handleUpdate(item.id, 'disputeDetails.amountOfTaxDisputed', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" /></FormField>
-                                </div>}
-                             </div>
-                        </div>
-
-                    </div>
-                ))}
-              </div>
-                <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="mt-6 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm">Add Foreign Income Source</button>
+                     ))}
+                     <button onClick={() => dispatch({type: 'ADD_VEHICLE'})} className="bg-blue-500 text-white px-3 py-2 rounded-md text-sm">+ Add Vehicle</button>
+                   </div>
+                )}
                 
-                {internationalIncome.length > 0 && 
-                <div className="mt-6 border-t pt-4">
-                    <h3 className="font-semibold text-lg mb-2 text-gray-800">FTC Computation Summary Schedule</h3>
-                     <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
-                                <tr>
-                                    <th className="p-2 text-left">Country / Nature</th>
-                                    <th className="p-2 text-right">Amount (INR)</th>
-                                    <th className="p-2 text-right">Tax Paid (INR)</th>
-                                    <th className="p-2 text-left">Applicable Rule</th>
-                                    <th className="p-2 text-right">Indian Tax</th>
-                                    <th className="p-2 text-right">FTC Allowed</th>
-                                    <th className="p-2 text-right">Net Tax</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {intlResult.itemized.map(itemResult => (
-                                    <tr key={itemResult.id} className="border-b">
-                                        <td className="p-2">{itemResult.country || 'N/A'}<br/><span className="text-xs text-gray-500">{itemResult.nature}</span></td>
-                                        <td className="p-2 text-right">{formatCurrency(itemResult.amountInINR)}</td>
-                                        <td className="p-2 text-right">{formatCurrency(itemResult.taxPaidInINR)}</td>
-                                        <td className="p-2 text-left">{itemResult.applicableRule}</td>
-                                        <td className="p-2 text-right">{formatCurrency(itemResult.indianTax)}</td>
-                                        <td className="p-2 text-right text-green-700 font-bold">{formatCurrency(itemResult.totalFtc)}</td>
-                                        <td className="p-2 text-right font-bold">{formatCurrency(itemResult.netTax)}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                             <tfoot className="font-bold bg-gray-200">
-                                <tr>
-                                    <td className="p-2 text-left">Total</td>
-                                    <td className="p-2 text-right">{formatCurrency(intlResult.netIncomeAdded)}</td>
-                                    <td className="p-2 text-right"></td>
-                                    <td className="p-2 text-left"></td>
-                                    <td className="p-2 text-right">{formatCurrency(intlResult.taxOnIncome)}</td>
-                                    <td className="p-2 text-right">{formatCurrency(intlResult.totalFtcAllowed)}</td>
-                                    <td className="p-2 text-right">{formatCurrency(intlResult.taxOnIncome - intlResult.totalFtcAllowed)}</td>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-                }
+                 {[PresumptiveScheme.B, PresumptiveScheme.BB, PresumptiveScheme.BBA, PresumptiveScheme.BBB].includes(pgbp.presumptiveScheme) && (
+                    <table className="w-full table-fixed">
+                        {tableHeader()}
+                        <tbody>
+                            <IncomeTableRow label="Aggregate Receipts" path={`pgbp.aggregateReceipts${pgbp.presumptiveScheme.slice(2)}`} value={(pgbp as any)[`aggregateReceipts${pgbp.presumptiveScheme.slice(2)}`]} dispatch={dispatch} />
+                        </tbody>
+                    </table>
+                 )}
+
+                <table className="w-full table-fixed mt-6">
+                   {tableHeader()}
+                   <tbody>
+                      <IncomeTableRow label="Speculative Income" path="pgbp.speculativeIncome" value={pgbp.speculativeIncome} dispatch={dispatch} helpText="Enter net positive income from speculative transactions." />
+                   </tbody>
+                </table>
             </Card>
+            <Card title="PGBP Additions / Disallowances">
+                 <h4 className="font-semibold text-base text-gray-700 mt-4 mb-2">Income Additions</h4>
+                <table className="w-full table-fixed mb-6">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow multiEntry label="Unreported Sales / Receipts" path="pgbp.additions.unreportedSales" value={pgbp.additions.unreportedSales} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow multiEntry label="Unaccounted Business Income" path="pgbp.additions.unaccountedBusinessIncome" value={pgbp.additions.unaccountedBusinessIncome} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow multiEntry label="Bogus Purchases" path="pgbp.additions.bogusPurchases" value={pgbp.additions.bogusPurchases} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow multiEntry label="Unrecorded Credits" path="pgbp.additions.unrecordedCredits" value={pgbp.additions.unrecordedCredits} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="GP/NP Ratio Difference" path="pgbp.additions.gpNpRatioDifference" value={pgbp.additions.gpNpRatioDifference} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Stock Suppression / Undervaluation" path="pgbp.additions.stockSuppression" value={pgbp.additions.stockSuppression} dispatch={dispatch} disabled={isPresumptive} />
+                    </tbody>
+                </table>
+                 <h4 className="font-semibold text-base text-gray-700 mt-4 mb-2">Expense Disallowances</h4>
+                 <table className="w-full table-fixed">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="Employee Contribution to PF/ESI (Sec 36)" path="pgbp.additions.disallowance36_employeeContrib" value={pgbp.additions.disallowance36_employeeContrib} dispatch={dispatch} disabled={isPresumptive} helpText="If deposited after due date."/>
+                        <IncomeTableRow label="Provision for Bad/Doubtful Debts (Sec 36(1)(vii))" path="pgbp.additions.disallowance36_1_vii_provisions" value={pgbp.additions.disallowance36_1_vii_provisions} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Interest on Borrowed Capital (Sec 36(1)(iii))" path="pgbp.additions.disallowance36_1_iii_interest" value={pgbp.additions.disallowance36_1_iii_interest} dispatch={dispatch} disabled={isPresumptive} helpText="E.g., for acquisition of capital asset not yet put to use."/>
+                        <IncomeTableRow label="Non-Business Expenditure (Sec 37(1))" path="pgbp.additions.disallowance37_1_nonBusiness" value={pgbp.additions.disallowance37_1_nonBusiness} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Personal Expenditure (Sec 37(1))" path="pgbp.additions.disallowance37_1_personal" value={pgbp.additions.disallowance37_1_personal} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Capital Expenditure (Sec 37(1))" path="pgbp.additions.disallowance37_1_capital" value={pgbp.additions.disallowance37_1_capital} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="TDS Non-Compliance (Sec 40(a))" path="pgbp.additions.disallowance40a_tds" value={pgbp.additions.disallowance40a_tds} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Excess Partner Payments (Sec 40(b))" path="pgbp.additions.disallowance40b_partnerPayments" value={pgbp.additions.disallowance40b_partnerPayments} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Related Party Payments (Sec 40A(2))" path="pgbp.additions.disallowance40A2_relatedParty" value={pgbp.additions.disallowance40A2_relatedParty} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Cash Payments > 10,000 (Sec 40A(3))" path="pgbp.additions.disallowance40A3_cashPayment" value={pgbp.additions.disallowance40A3_cashPayment} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Unapproved Gratuity Fund (Sec 40A(7))" path="pgbp.additions.disallowance40A7_gratuity" value={pgbp.additions.disallowance40A7_gratuity} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Contributions to Unapproved Funds (Sec 40A(9))" path="pgbp.additions.disallowance40A9_unapprovedFunds" value={pgbp.additions.disallowance40A9_unapprovedFunds} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Delayed Statutory Dues (Sec 43B)" path="pgbp.additions.disallowance43B_statutoryDues" value={pgbp.additions.disallowance43B_statutoryDues} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Expense for Exempt Income (Sec 14A)" path="pgbp.additions.disallowance14A_exemptIncome" value={pgbp.additions.disallowance14A_exemptIncome} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Incorrect Depreciation Claim" path="pgbp.additions.incorrectDepreciation" value={pgbp.additions.incorrectDepreciation} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow label="Unexplained Expenditure (Sec 69C)" path="pgbp.additions.unexplainedExpenditure" value={pgbp.additions.unexplainedExpenditure} dispatch={dispatch} disabled={isPresumptive} />
+                        <IncomeTableRow multiEntry label="Other Disallowances" path="pgbp.additions.otherDisallowances" value={pgbp.additions.otherDisallowances} dispatch={dispatch} disabled={isPresumptive} />
+                    </tbody>
+                </table>
+            </Card>
+        </>
         );
       }
-      case 'Set Off and Carry Forward': return (
-        <Card title="Loss Details for Set Off & Carry Forward">
-            <h3 className="font-semibold text-lg mb-2 text-gray-700">Brought Forward Losses</h3>
-            <SingleInputField label="Unabsorbed Depreciation (Sec 32(2))" path="losses.broughtForward.unabsorbedDepreciation" value={taxData.losses.broughtForward.unabsorbedDepreciation} dispatch={dispatch} helpText="Can be set-off against any income except salary."/>
-            <SingleInputField label="House Property Loss" path="losses.broughtForward.houseProperty" value={taxData.losses.broughtForward.houseProperty} dispatch={dispatch} helpText="Set-off only against House Property income." />
-            <SingleInputField label="Business Loss (Non-speculative)" path="losses.broughtForward.businessNonSpeculative" value={taxData.losses.broughtForward.businessNonSpeculative} dispatch={dispatch} helpText="Set-off only against Business income." />
-            <SingleInputField label="Speculative Business Loss" path="losses.broughtForward.businessSpeculative" value={taxData.losses.broughtForward.businessSpeculative} dispatch={dispatch} helpText="Set-off only against Speculative income."/>
-            <SingleInputField label="Long-Term Capital Loss" path="losses.broughtForward.ltcl" value={taxData.losses.broughtForward.ltcl} dispatch={dispatch} helpText="Set-off only against Long-Term Capital Gains." />
-            <SingleInputField label="Short-Term Capital Loss" path="losses.broughtForward.stcl" value={taxData.losses.broughtForward.stcl} dispatch={dispatch} helpText="Set-off against any Capital Gains." />
-            <SingleInputField label="Loss from Owning & Maintaining Race Horses" path="losses.broughtForward.raceHorses" value={taxData.losses.broughtForward.raceHorses} dispatch={dispatch} helpText="Set-off only against same income." />
-            
-            <h3 className="font-semibold text-lg mt-6 mb-2 text-gray-700 border-t pt-4">Current Year Losses</h3>
-            <p className="text-xs text-gray-500 mb-2">Note: Current year House Property loss is calculated automatically from the 'House Property' tab. Enter other current year losses below.</p>
-            <SingleInputField label="Business Loss (Non-speculative)" path="losses.currentYear.businessNonSpeculative" value={taxData.losses.currentYear.businessNonSpeculative} dispatch={dispatch} />
-            <SingleInputField label="Speculative Business Loss" path="losses.currentYear.businessSpeculative" value={taxData.losses.currentYear.businessSpeculative} dispatch={dispatch} />
-            <SingleInputField label="Long-Term Capital Loss" path="losses.currentYear.ltcl" value={taxData.losses.currentYear.ltcl} dispatch={dispatch} />
-            <SingleInputField label="Short-Term Capital Loss" path="losses.currentYear.stcl" value={taxData.losses.currentYear.stcl} dispatch={dispatch} />
-            <SingleInputField label="Loss from Owning & Maintaining Race Horses" path="losses.currentYear.raceHorses" value={taxData.losses.currentYear.raceHorses} dispatch={dispatch} />
-        </Card>
-      );
-      case 'Deductions': {
-        const commonHelpText = "Enter amount of claimed deduction to be disallowed and added to income.";
-        return (<>
-            <Card title="Additions on Account of Disallowed Chapter VI-A Deductions">
-                <div className="p-4 mb-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 text-sm rounded-r-lg">
-                    <p className="font-bold">Assessing Officer Note:</p>
-                    <p>Enter the amount of any deduction claimed by the assessee that is being disallowed. These amounts will be added back to the total income.</p>
+      case 'Capital Gains': {
+          const { capitalGains } = taxData;
+          return (<>
+            <Card title="Capital Gains Income">
+                <table className="w-full table-fixed">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="Short Term Capital Gains (STCG) u/s 111A" path="capitalGains.stcg111A" value={capitalGains.stcg111A} dispatch={dispatch} />
+                        <IncomeTableRow label="Short Term Capital Gains (STCG) - Other" path="capitalGains.stcgOther" value={capitalGains.stcgOther} dispatch={dispatch} />
+                        <IncomeTableRow label="Long Term Capital Gains (LTCG) u/s 112A" path="capitalGains.ltcg112A" value={capitalGains.ltcg112A} dispatch={dispatch} />
+                        <IncomeTableRow label="Long Term Capital Gains (LTCG) - Other" path="capitalGains.ltcgOther" value={capitalGains.ltcgOther} dispatch={dispatch} />
+                    </tbody>
+                </table>
+            </Card>
+            <Card title="Capital Gains Additions / Disallowances">
+                 <table className="w-full table-fixed">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="Adjustment u/s 50 (Depreciable Assets)" path="capitalGains.adjustment50" value={capitalGains.adjustment50} dispatch={dispatch}/>
+                        <IncomeTableRow label="Adjustment u/s 43CA (Land/Building as Stock)" path="capitalGains.adjustment43CA" value={capitalGains.adjustment43CA} dispatch={dispatch}/>
+                        <IncomeTableRow label="Adjustment u/s 50C (Land/Building)" path="capitalGains.adjustment50C" value={capitalGains.adjustment50C} dispatch={dispatch} helpText="Difference between Stamp Duty Value and Sale Consideration."/>
+                        <IncomeTableRow label="Adjustment u/s 50CA (Unquoted Shares)" path="capitalGains.adjustment50CA" value={capitalGains.adjustment50CA} dispatch={dispatch} helpText="Difference between FMV and Sale Consideration."/>
+                        <IncomeTableRow label="Adjustment u/s 50D (FMV as Sale Consideration)" path="capitalGains.adjustment50D" value={capitalGains.adjustment50D} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance of Cost of Improvement" path="capitalGains.costOfImprovement" value={capitalGains.costOfImprovement} dispatch={dispatch}/>
+                        <IncomeTableRow multiEntry label="Disallowance of Exemption u/s 54" path="capitalGains.exemption54" value={capitalGains.exemption54} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54B (LTCG)" path="capitalGains.exemption54B_ltcg" value={capitalGains.exemption54B_ltcg} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54B (STCG)" path="capitalGains.exemption54B_stcg" value={capitalGains.exemption54B_stcg} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54D" path="capitalGains.exemption54D" value={capitalGains.exemption54D} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54EC" path="capitalGains.exemption54EC" value={capitalGains.exemption54EC} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54EE" path="capitalGains.exemption54EE" value={capitalGains.exemption54EE} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54F" path="capitalGains.exemption54F" value={capitalGains.exemption54F} dispatch={dispatch}/>
+                        <IncomeTableRow label="Disallowance u/s 54G/GA/GB" path="capitalGains.exemption54G" value={capitalGains.exemption54G} dispatch={dispatch}/>
+                    </tbody>
+                     <tfoot>
+                        <CalculatedDisplayRow label="Total Additions to Capital Gains" value={totalCapitalGainsAdditions} />
+                     </tfoot>
+                </table>
+            </Card>
+          </>);
+      }
+      case 'Other Sources': {
+        const { otherSources, deemedIncome } = taxData;
+        return (
+          <>
+            <Card title="Income from Other Sources">
+                <table className="w-full table-fixed">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow multiEntry label="Other Incomes" path="otherSources.otherIncomes" value={otherSources.otherIncomes} dispatch={dispatch} helpText="e.g., Interest, Dividends (post AY 20-21), etc." />
+                        <IncomeTableRow label="Winnings from Lottery, Games, etc." path="otherSources.winnings" value={otherSources.winnings} dispatch={dispatch} />
+                        <IncomeTableRow label="Agricultural Income (for rate purposes)" path="otherSources.exemptIncome" value={otherSources.exemptIncome} dispatch={dispatch} />
+                        <IncomeTableRow label="Deemed Dividend u/s 2(22)(e)" path="otherSources.deemedDividend2_22_e" value={otherSources.deemedDividend2_22_e} dispatch={dispatch} />
+                        <IncomeTableRow label="Gifts taxable u/s 56(2)(x)" path="otherSources.gifts56_2_x" value={otherSources.gifts56_2_x} dispatch={dispatch} />
+                        <IncomeTableRow label="Family Pension" path="otherSources.familyPension" value={otherSources.familyPension} dispatch={dispatch} />
+                        <IncomeTableRow label="Interest on Enhanced Compensation" path="otherSources.interestOnEnhancedCompensation" value={otherSources.interestOnEnhancedCompensation} dispatch={dispatch} />
+                        <IncomeTableRow label="Income from Race Horses" path="otherSources.raceHorseIncome" value={otherSources.raceHorseIncome} dispatch={dispatch} />
+                        <IncomeTableRow label="Disallowance u/s 14A" path="otherSources.disallowance14A" value={otherSources.disallowance14A} dispatch={dispatch} />
+                    </tbody>
+                </table>
+            </Card>
+            <Card title="Deemed Income (u/s 68, 69, etc.)">
+                <table className="w-full table-fixed">
+                     {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow multiEntry label="Cash Credits (Sec 68)" path="deemedIncome.sec68_cashCredits" value={deemedIncome.sec68_cashCredits} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Unexplained Investments (Sec 69)" path="deemedIncome.sec69_unexplainedInvestments" value={deemedIncome.sec69_unexplainedInvestments} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Unexplained Money (Sec 69A)" path="deemedIncome.sec69A_unexplainedMoney" value={deemedIncome.sec69A_unexplainedMoney} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Undisclosed Investments (Sec 69B)" path="deemedIncome.sec69B_investmentsNotDisclosed" value={deemedIncome.sec69B_investmentsNotDisclosed} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Unexplained Expenditure (Sec 69C)" path="deemedIncome.sec69C_unexplainedExpenditure" value={deemedIncome.sec69C_unexplainedExpenditure} dispatch={dispatch} />
+                        <IncomeTableRow multiEntry label="Hundi Borrowings (Sec 69D)" path="deemedIncome.sec69D_hundiBorrowing" value={deemedIncome.sec69D_hundiBorrowing} dispatch={dispatch} />
+                    </tbody>
+                </table>
+            </Card>
+          </>
+        )
+      }
+      case 'International Income':
+        return (<Card title="International Income & Foreign Tax Credit">
+          {taxData.internationalIncome.map((item, index) => (
+             <div key={item.id} className="border p-4 rounded-lg mb-4 bg-gray-50">
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className="font-semibold text-lg">Entry {index + 1}</h3>
+                  <button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="bg-red-500 text-white px-3 py-1 rounded">Remove</button>
                 </div>
-                <div className="space-y-4">
-                    <div>
-                        <h3 className="font-semibold text-md text-gray-800 mb-2">Savings & Investments</h3>
-                        <table className="w-full table-fixed">
-                            {tableHeader}
-                            <tbody>
-                                <IncomeTableRow label="u/s 80C, 80CCC, 80CCD(1)" path="deductions.c80" value={taxData.deductions.c80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80CCD(1B) - NPS" path="deductions.ccd1b80" value={taxData.deductions.ccd1b80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80TTA - Savings Interest" path="deductions.tta80" value={taxData.deductions.tta80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80TTB - Sr. Citizen Interest" path="deductions.ttb80" value={taxData.deductions.ttb80} dispatch={dispatch} helpText={commonHelpText}/>
-                            </tbody>
-                        </table>
-                    </div>
-                    
-                     <div>
-                        <h3 className="font-semibold text-md text-gray-800 mb-2 pt-4 border-t">Employer Contributions</h3>
-                        <table className="w-full table-fixed">
-                            {tableHeader}
-                             <tbody>
-                                <IncomeTableRow label="u/s 80CCD(2) - Employer NPS" path="deductions.ccd2_80" value={taxData.deductions.ccd2_80} dispatch={dispatch} helpText={commonHelpText}/>
-                            </tbody>
-                        </table>
-                    </div>
-
-                    <div>
-                        <h3 className="font-semibold text-md text-gray-800 mb-2 pt-4 border-t">Health & Wellbeing</h3>
-                        <table className="w-full table-fixed">
-                            {tableHeader}
-                            <tbody>
-                                <IncomeTableRow label="u/s 80D - Health Insurance" path="deductions.d80" value={taxData.deductions.d80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80DD - Disabled Dependent" path="deductions.dd80" value={taxData.deductions.dd80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80DDB - Medical Treatment" path="deductions.ddb80" value={taxData.deductions.ddb80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80U - Self Disability" path="deductions.u80" value={taxData.deductions.u80} dispatch={dispatch} helpText={commonHelpText}/>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div>
-                        <h3 className="font-semibold text-md text-gray-800 mb-2 pt-4 border-t">Donations</h3>
-                        <table className="w-full table-fixed">
-                            {tableHeader}
-                            <tbody>
-                                <IncomeTableRow label="u/s 80G - Donations" path="deductions.g80" value={taxData.deductions.g80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80GGA - Scientific Research" path="deductions.gga80" value={taxData.deductions.gga80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80GGC - Political Donation" path="deductions.ggc80" value={taxData.deductions.ggc80} dispatch={dispatch} helpText={commonHelpText}/>
-                            </tbody>
-                        </table>
-                    </div>
-                     <div>
-                        <h3 className="font-semibold text-md text-gray-800 mb-2 pt-4 border-t">Other Deductions</h3>
-                        <table className="w-full table-fixed">
-                            {tableHeader}
-                            <tbody>
-                                <IncomeTableRow label="u/s 80E - Education Loan Interest" path="deductions.e80" value={taxData.deductions.e80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80GG - Rent Paid" path="deductions.gg80" value={taxData.deductions.gg80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80JJAA - New Employment" path="deductions.jjaa80" value={taxData.deductions.jjaa80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80QQB - Royalty (Authors)" path="deductions.qqb80" value={taxData.deductions.qqb80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80RRB - Royalty (Patents)" path="deductions.rrb80" value={taxData.deductions.rrb80} dispatch={dispatch} helpText={commonHelpText}/>
-                                <IncomeTableRow label="u/s 80-IA/IB/P etc. - Business Deductions" path="deductions.ia80" value={taxData.deductions.ia80} dispatch={dispatch} helpText={commonHelpText}/>
-                            </tbody>
-                        </table>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                   <FormField label="Country">
+                      <input type="text" value={item.country} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'country', value: e.target.value}})} className="p-2 border rounded w-full"/>
+                   </FormField>
+                   <FormField label="Nature of Income">
+                      <select value={item.nature} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'nature', value: e.target.value}})} className="p-2 border rounded w-full">
+                        {Object.values(InternationalIncomeNature).map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                   </FormField>
+                   <FormField label="Amount in Foreign Country (in INR)">
+                     <input type="text" value={formatInputValue(item.amountInINR)} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'amountInINR', value: parseFormattedValue(e.target.value)}})} className="p-2 border rounded w-full"/>
+                   </FormField>
+                   <FormField label="Tax Paid in Foreign Country (in INR)">
+                     <input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'taxPaidInINR', value: parseFormattedValue(e.target.value)}})} className="p-2 border rounded w-full"/>
+                   </FormField>
+                   <FormField label="Special Section for Tax Rate">
+                     <select value={item.specialSection} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'specialSection', value: e.target.value}})} className="p-2 border rounded w-full">
+                        <option value="None">None (Taxed at normal rates)</option>
+                        <option value="115A">115A</option><option value="115AB">115AB</option><option value="115AC">115AC</option><option value="115AD">115AD</option><option value="115AE">115AE</option><option value="115ACA">115ACA</option><option value="115BBA">115BBA</option>
+                     </select>
+                   </FormField>
+                   <FormField label="Is DTAA Applicable?">
+                       <RadioGroup path={`internationalIncome.${index}.dtaaApplicable`} value={item.dtaaApplicable} dispatch={dispatch} label=""/>
+                   </FormField>
+                   {item.dtaaApplicable && <>
+                     <FormField label="Applicable DTAA Article">
+                        <input type="text" value={item.applicableDtaaArticle} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'applicableDtaaArticle', value: e.target.value}})} className="p-2 border rounded w-full"/>
+                     </FormField>
+                     <FormField label="Tax Rate as per DTAA (%)">
+                        <input type="number" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'taxRateAsPerDtaa', value: e.target.value ? parseFloat(e.target.value)/100 : null }})} className="p-2 border rounded w-full"/>
+                     </FormField>
+                   </>}
+                   <FormField label="Form 67 Filed for FTC?">
+                       <RadioGroup path={`internationalIncome.${index}.form67Filed`} value={item.form67Filed} dispatch={dispatch} label=""/>
+                   </FormField>
+                   <div className="col-span-full border-t mt-4 pt-4">
+                      <h4 className="font-semibold mb-2">Transfer Pricing</h4>
+                       <FormField label="Is the transaction with an Associated Enterprise?">
+                           <RadioGroup path={`internationalIncome.${index}.transferPricing.isAssociatedEnterprise`} value={item.transferPricing.isAssociatedEnterprise} dispatch={dispatch} label=""/>
+                       </FormField>
+                       {item.transferPricing.isAssociatedEnterprise && <>
+                         <FormField label="Arm's Length Price (ALP)">
+                           <input type="text" value={formatInputValue(item.transferPricing.armsLengthPrice)} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'transferPricing.armsLengthPrice', value: parseFormattedValue(e.target.value)}})} className="p-2 border rounded w-full"/>
+                         </FormField>
+                         <FormField label="Form 3CEB Compliance Status">
+                           <select value={item.transferPricing.form3CEBStatus} onChange={e => dispatch({type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: {id: item.id, path: 'transferPricing.form3CEBStatus', value: e.target.value}})} className="p-2 border rounded w-full">
+                                {Object.values(ComplianceStatus).map(s => <option key={s} value={s}>{s}</option>)}
+                           </select>
+                         </FormField>
+                       </>}
+                   </div>
+                </div>
+             </div>
+          ))}
+          <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="bg-green-600 text-white px-4 py-2 rounded">+ Add International Income Entry</button>
+        </Card>);
+      case 'Set Off and Carry Forward':
+          const { losses } = taxData;
+          const { breakdown } = computationResult;
+          return (<>
+            <Card title="Current Year Losses (to be set-off)">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <SingleInputField label="Business Loss (Non-Speculative)" path="losses.currentYear.businessNonSpeculative" value={losses.currentYear.businessNonSpeculative} dispatch={dispatch} />
+                    <SingleInputField label="Speculative Business Loss" path="losses.currentYear.businessSpeculative" value={losses.currentYear.businessSpeculative} dispatch={dispatch} />
+                    <SingleInputField label="Short-Term Capital Loss (STCL)" path="losses.currentYear.stcl" value={losses.currentYear.stcl} dispatch={dispatch} />
+                    <SingleInputField label="Long-Term Capital Loss (LTCL)" path="losses.currentYear.ltcl" value={losses.currentYear.ltcl} dispatch={dispatch} />
+                    <SingleInputField label="Loss from Owning and Maintaining Race Horses" path="losses.currentYear.raceHorses" value={losses.currentYear.raceHorses} dispatch={dispatch} />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center mb-2 border-b py-2 last:border-0">
+                        <div><label className="text-gray-600 font-medium text-sm">House Property Loss</label></div>
+                        <div className="p-2 border rounded-md bg-gray-100 text-left">{formatCurrency(breakdown.income.houseProperty.assessed < 0 ? Math.abs(breakdown.income.houseProperty.assessed) : 0)}</div>
                     </div>
                 </div>
             </Card>
-        </>);
-      }
-      case 'Interest & Filing Details': {
-        const { interestCalc } = taxData;
-        const isPresumptive44AD_ADA = [PresumptiveScheme.AD, PresumptiveScheme.ADA].includes(taxData.pgbp.presumptiveScheme);
-        return(<>
-            <Card title="Details for Interest Calculation (u/s 234A, 234B, 234C)">
+            <Card title="Brought Forward Losses (from prior years)">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-gray-600 font-medium text-sm mb-1">Assessment Type</label>
-                        <select 
-                            value={interestCalc.assessmentType} 
-                            onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.assessmentType', value: e.target.value as AssessmentType}})}
-                            className="w-full p-2 border rounded-md"
-                        >
-                            <option value="regular">Regular / Self-Assessment</option>
-                            <option value="best_judgment_144">Best Judgment (u/s 144)</option>
+                    <SingleInputField label="House Property Loss" path="losses.broughtForward.houseProperty" value={losses.broughtForward.houseProperty} dispatch={dispatch} />
+                    <SingleInputField label="Business Loss (Non-Speculative)" path="losses.broughtForward.businessNonSpeculative" value={losses.broughtForward.businessNonSpeculative} dispatch={dispatch} />
+                    <SingleInputField label="Speculative Business Loss" path="losses.broughtForward.businessSpeculative" value={losses.broughtForward.businessSpeculative} dispatch={dispatch} />
+                    <SingleInputField label="Short-Term Capital Loss (STCL)" path="losses.broughtForward.stcl" value={losses.broughtForward.stcl} dispatch={dispatch} />
+                    <SingleInputField label="Long-Term Capital Loss (LTCL)" path="losses.broughtForward.ltcl" value={losses.broughtForward.ltcl} dispatch={dispatch} />
+                    <SingleInputField label="Loss from Owning and Maintaining Race Horses" path="losses.broughtForward.raceHorses" value={losses.broughtForward.raceHorses} dispatch={dispatch} />
+                    <SingleInputField label="Unabsorbed Depreciation" path="losses.broughtForward.unabsorbedDepreciation" value={losses.broughtForward.unabsorbedDepreciation} dispatch={dispatch} />
+                </div>
+            </Card>
+          </>);
+      case 'Deductions':
+        const { deductions } = taxData;
+        const deductionsDisabled = taxData.taxRegime === TaxRegime.New;
+        const deductionsNote = deductionsDisabled ? "Deductions under Chapter VI-A are not available under the New Tax Regime (except 80CCD(2) and 80JJAA)." : "";
+        
+        return (<>
+            <Card title="Deductions under Chapter VI-A">
+                {deductionsNote && <p className="text-sm bg-yellow-100 text-yellow-800 p-3 rounded-md mb-4">{deductionsNote}</p>}
+                <table className="w-full table-fixed">
+                    {tableHeader()}
+                    <tbody>
+                        <IncomeTableRow label="Sec 80C, 80CCC, 80CCD(1)" path="deductions.c80" value={deductions.c80} dispatch={dispatch} disabled={deductionsDisabled} helpText="e.g., LIC, PPF, NSC, ELSS, etc."/>
+                        <IncomeTableRow label="Sec 80CCD(1B) - NPS Contribution" path="deductions.ccd1b80" value={deductions.ccd1b80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80CCD(2) - Employer NPS Contribution" path="deductions.ccd2_80" value={deductions.ccd2_80} dispatch={dispatch} helpText="Allowed under both regimes."/>
+                        <IncomeTableRow label="Sec 80D - Health Insurance" path="deductions.d80" value={deductions.d80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80DD - Disabled Dependent" path="deductions.dd80" value={deductions.dd80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80DDB - Medical Treatment" path="deductions.ddb80" value={deductions.ddb80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80E - Interest on Education Loan" path="deductions.e80" value={deductions.e80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80G - Donations" path="deductions.g80" value={deductions.g80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80GG - Rent Paid" path="deductions.gg80" value={deductions.gg80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80GGA - Donation for Scientific Research" path="deductions.gga80" value={deductions.gga80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80GGC - Donation to Political Parties" path="deductions.ggc80" value={deductions.ggc80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80TTA - Interest on Savings Account" path="deductions.tta80" value={deductions.tta80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80TTB - Interest (Senior Citizens)" path="deductions.ttb80" value={deductions.ttb80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80U - Self Disability" path="deductions.u80" value={deductions.u80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80JJAA - New Employment" path="deductions.jjaa80" value={deductions.jjaa80} dispatch={dispatch} helpText="Allowed under both regimes."/>
+                        <IncomeTableRow label="Sec 80QQB - Royalty of Authors" path="deductions.qqb80" value={deductions.qqb80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80RRB - Royalty on Patents" path="deductions.rrb80" value={deductions.rrb80} dispatch={dispatch} disabled={deductionsDisabled}/>
+                        <IncomeTableRow label="Sec 80-IA, 80-IB, etc." path="deductions.ia80" value={deductions.ia80} dispatch={dispatch} disabled={deductionsDisabled} helpText="Profit-linked business deductions."/>
+                    </tbody>
+                </table>
+            </Card>
+        </>);
+      case 'Interest & Filing Details':
+          const { interestCalc } = taxData;
+          return (<>
+            <Card title="Filing & Assessment Details">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <DateInput label="Due Date of Filing" value={interestCalc.dueDateOfFiling} onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.dueDateOfFiling', value: val}})} />
+                     <DateInput label="Actual Date of Filing" value={interestCalc.actualDateOfFiling} onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.actualDateOfFiling', value: val}})} />
+                     <FormField label="Type of Assessment">
+                        <select value={interestCalc.assessmentType} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.assessmentType', value: e.target.value}})} className="w-full p-2 border rounded-md">
+                            <option value="regular">Regular Assessment (u/s 143(3))</option>
+                            <option value="best_judgment_144">Best Judgment Assessment (u/s 144)</option>
                             <option value="reassessment_147_post_assessment">Reassessment (u/s 147)</option>
                         </select>
-                    </div>
-                    {interestCalc.assessmentType === 'reassessment_147_post_assessment' && 
-                        <DateInput 
-                            label="Due Date of Notice u/s 148"
-                            value={interestCalc.dueDate148Notice ?? ''}
-                            onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.dueDate148Notice', value: val}})}
-                        />
-                    }
-                    <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <DateInput 
-                            label="Statutory Due Date of Filing"
-                            value={interestCalc.dueDateOfFiling}
-                            onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.dueDateOfFiling', value: val}})}
-                        />
-                        <DateInput 
-                            label="Actual Date of Filing"
-                            value={interestCalc.actualDateOfFiling}
-                            onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.actualDateOfFiling', value: val}})}
-                        />
-                    </div>
-                </div>
-                <div className="mt-6 pt-6 border-t">
-                    <h3 className="font-semibold text-lg text-gray-700 mb-3">Advance Tax Installments Paid</h3>
-                     {isPresumptive44AD_ADA && (
-                        <div className="p-3 mb-4 bg-blue-50 border border-blue-200 text-blue-800 text-sm rounded-md">
-                            For Presumptive Income under 44AD/ADA, only the last installment (Q4 - March 15th) is applicable.
-                        </div>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <SingleInputField label={isPresumptive44AD_ADA ? "Q1 (Not Applicable)" : "Q1 (by Jun 15)"} path="interestCalc.advanceTaxInstallments.q1" value={interestCalc.advanceTaxInstallments.q1} dispatch={dispatch} />
-                        <SingleInputField label={isPresumptive44AD_ADA ? "Q2 (Not Applicable)" : "Q2 (by Sep 15)"} path="interestCalc.advanceTaxInstallments.q2" value={interestCalc.advanceTaxInstallments.q2} dispatch={dispatch} />
-                        <SingleInputField label={isPresumptive44AD_ADA ? "Q3 (Not Applicable)" : "Q3 (by Dec 15)"} path="interestCalc.advanceTaxInstallments.q3" value={interestCalc.advanceTaxInstallments.q3} dispatch={dispatch} />
-                        <SingleInputField label="Q4 (by Mar 15)" path="interestCalc.advanceTaxInstallments.q4" value={interestCalc.advanceTaxInstallments.q4} dispatch={dispatch} />
-                    </div>
+                     </FormField>
+                      {interestCalc.assessmentType === 'reassessment_147_post_assessment' &&
+                        <DateInput label="Due Date specified in 148 Notice" value={interestCalc.dueDate148Notice ?? ''} onChange={val => dispatch({type: 'UPDATE_FIELD', payload: {path: 'interestCalc.dueDate148Notice', value: val}})} />
+                      }
                 </div>
             </Card>
-            <Card title="Interest Calculation Summary">
-                <div className="space-y-2">
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                        <div>
-                            <span className="font-semibold text-gray-700">Interest u/s 234A</span>
-                            <span className="text-sm text-gray-500 ml-2">({computationResult.interest.months_234A} months)</span>
-                        </div>
-                        <span className="font-mono text-gray-800">₹ {formatCurrency(computationResult.interest.u_s_234A)}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                        <div>
-                            <span className="font-semibold text-gray-700">Interest u/s 234B</span>
-                            <span className="text-sm text-gray-500 ml-2">({computationResult.interest.months_234B} months)</span>
-                        </div>
-                        <span className="font-mono text-gray-800">₹ {formatCurrency(computationResult.interest.u_s_234B)}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                        <div>
-                            <span className="font-semibold text-gray-700">Interest u/s 234C</span>
-                            <span className="text-sm text-gray-500 ml-2">{format234CMonths(computationResult.interest.months_234C)}</span>
-                        </div>
-                        <span className="font-mono text-gray-800">₹ {formatCurrency(computationResult.interest.u_s_234C)}</span>
-                    </div>
-                    <div className="flex justify-between items-center p-3 bg-gray-200 rounded mt-2 border-t border-gray-300">
-                        <span className="font-bold text-lg text-gray-800">Total Interest Payable</span>
-                        <span className="font-mono font-bold text-lg text-gray-900">₹ {formatCurrency(computationResult.interest.totalInterest)}</span>
-                    </div>
+            <Card title="Advance Tax Installments">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <SingleInputField label="By 15th June" path="interestCalc.advanceTaxInstallments.q1" value={interestCalc.advanceTaxInstallments.q1} dispatch={dispatch} />
+                    <SingleInputField label="By 15th September" path="interestCalc.advanceTaxInstallments.q2" value={interestCalc.advanceTaxInstallments.q2} dispatch={dispatch} />
+                    <SingleInputField label="By 15th December" path="interestCalc.advanceTaxInstallments.q3" value={interestCalc.advanceTaxInstallments.q3} dispatch={dispatch} />
+                    <SingleInputField label="By 15th March" path="interestCalc.advanceTaxInstallments.q4" value={interestCalc.advanceTaxInstallments.q4} dispatch={dispatch} />
                 </div>
+                <p className="text-xs text-gray-500 mt-4">Enter installment amounts (not cumulative).</p>
             </Card>
-        </>);
-      }
-      case 'Income and Tax Calculator': return <SummaryView data={taxData} result={computationResult} />;
-      default: return <div>Select a tab</div>;
+          </>);
+      case 'Income and Tax Calculator':
+        return <SummaryView data={taxData} result={computationResult} />;
+      default:
+        return <div>Select a tab</div>;
     }
   };
 
-
   return (
-    <div className="bg-gray-100 min-h-screen">
-       <header className="bg-gradient-to-r from-gray-700 to-gray-900 text-white shadow-md no-print">
-        <div className="container mx-auto px-4 py-2 flex justify-between items-center">
-            <h1 className="text-xl font-semibold">AO Tax Tool: <span className="text-blue-300 capitalize">{taxData.taxpayerType.replace(/_/g, ' / ')}</span></h1>
-             <div className="flex items-center gap-3">
-                <div className="flex items-center gap-2">
-                    <label htmlFor="ay-select" className="text-xs text-gray-300">A.Y.</label>
-                    <select 
-                        id="ay-select"
-                        value={taxData.assessmentYear}
-                        onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'assessmentYear', value: e.target.value}})}
-                        className="bg-gray-800 border border-gray-600 rounded-md p-1 text-sm focus:ring-blue-500 focus:border-blue-500"
-                    >
-                        {ASSESSMENT_YEARS.map(year => <option key={year} value={year}>{year}</option>)}
-                    </select>
-                </div>
-                <button onClick={handleReset} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm">Reset</button>
-            </div>
+    <div className="min-h-screen font-sans">
+      <header className="bg-white shadow-md p-4 no-print">
+        <div className="container mx-auto flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <svg viewBox="0 0 36 24" className="h-8 w-12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="36" height="24" fill="white"/>
+                <rect width="36" height="8" fill="#FF9933"/>
+                <rect y="16" width="36" height="8" fill="#138808"/>
+                <circle cx="18" cy="12" r="3.5" fill="none" stroke="#000080" strokeWidth="1"/>
+                <circle cx="18" cy="12" r="0.5" fill="#000080"/>
+                <path d="M18 12L18 8.5M18 12L18 15.5M18 12L21.031 10.25M18 12L14.969 13.75M18 12L21.031 13.75M18 12L14.969 10.25M18 12L21.5 12M18 12L14.5 12M18 12L19.75 14.531M18 12L16.25 9.469M18 12L19.75 9.469M18 12L16.25 14.531" stroke="#000080" strokeWidth="0.5" strokeLinecap="round"/>
+            </svg>
+          </div>
+          <div className="flex items-center gap-4">
+             <select value={taxData.assessmentYear} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'assessmentYear', value: e.target.value}})} className="p-2 border rounded-md font-semibold bg-gray-50">
+                {ASSESSMENT_YEARS.map(year => <option key={year} value={year}>AY {year}</option>)}
+             </select>
+             <button onClick={handleReset} className="text-sm bg-red-600 text-white px-3 py-1 rounded-md hover:bg-red-700 transition-colors">Reset All Data</button>
+          </div>
         </div>
       </header>
-
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10 no-print">
-          <nav className="container mx-auto px-2 -mb-px flex space-x-1 sm:space-x-2 overflow-x-auto">
-              {dynamicTabs.map(tab => (
-                  <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`whitespace-nowrap py-3 px-2 sm:px-3 border-b-2 font-medium text-xs sm:text-sm transition-colors duration-200 ${
-                          activeTab === tab
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                      }`}
-                  >
-                      {tab}
-                  </button>
-              ))}
-          </nav>
-      </div>
-       <main className="container mx-auto p-4 md:p-6">
-          {renderContent()}
+      
+      <main className="container mx-auto p-4 md:p-8">
+        <nav className="mb-8 overflow-x-auto whitespace-nowrap no-print">
+          <ul className="flex border-b">
+            {dynamicTabs.map(tab => (
+              <li key={tab} className="-mb-px mr-1">
+                <button
+                  onClick={() => setActiveTab(tab)}
+                  className={`inline-block py-2 px-4 font-semibold ${activeTab === tab ? 'text-blue-600 border-l border-t border-r rounded-t' : 'text-gray-500 hover:text-blue-800'}`}
+                >
+                  {tab}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+        <div>{renderContent()}</div>
       </main>
     </div>
   );
