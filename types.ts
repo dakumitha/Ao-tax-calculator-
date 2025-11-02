@@ -154,7 +154,8 @@ export interface CapitalGains {
   adjustment50C: IncomeSource;
   costOfImprovement: IncomeSource;
   exemption54: IncomeSource;
-  exemption54B: IncomeSource;
+  exemption54B_ltcg: IncomeSource;
+  exemption54B_stcg: IncomeSource;
   exemption54D: IncomeSource;
   exemption54EC: IncomeSource;
   exemption54EE: IncomeSource;
@@ -172,6 +173,7 @@ export interface OtherSources {
   otherIncomes: IncomeSource;
   winnings: IncomeSource;
   exemptIncome: IncomeSource; // Agricultural
+  otherExemptIncomeSec10: IncomeSource;
   disallowance14A: IncomeSource;
   deemedDividend2_22_e: IncomeSource;
   gifts56_2_x: IncomeSource;
@@ -251,12 +253,15 @@ export interface InterestCalculation {
 
 export enum InternationalIncomeNature {
     Salary = 'Salary',
-    Interest = 'Interest',
+    HouseProperty = 'House property',
+    BusinessProfessionalIncome = 'Business/professional income',
+    LongTermCapitalGain = 'Long term capital gain',
+    ShortTermCapitalGain = 'Short term capital gain',
+    InterestIncome = 'Interest income',
     Dividend = 'Dividend',
-    RoyaltyFTS = 'Royalty / FTS',
-    BusinessIncome = 'Business Income',
-    CapitalGains = 'Capital Gains',
-    OtherIncome = 'Other Income',
+    Royalty = 'Royalty not being part of business income',
+    FeesForTechnicalServices = 'Fees for technical services not being part of business income',
+    Others = 'Others (specify)',
 }
 
 
@@ -279,26 +284,61 @@ export interface InternationalIncomeItem {
     nature: InternationalIncomeNature;
     amountInINR: number | null;
     taxPaidInINR: number | null;
+    taxRateOutsideIndia: number | null; // As a decimal
     taxPayableUnder115JBJC: number | null;
     dtaaApplicable: boolean;
     applicableDtaaArticle: string;
     taxRateAsPerDtaa: number | null; // As a decimal, e.g., 0.15 for 15%
-    isLTCG: boolean; // Only for capital gains
+    isLTCG: boolean;
     specialSection: 'None' | '115A' | '115AB' | '115AC' | '115AD' | '115AE' | '115ACA' | '115BBA';
     transferPricing: TransferPricingDetails;
     form67Filed: boolean;
+    // New fields from Form 67 Part B
+    refundClaimed: boolean;
+    refundDetails?: {
+        lossYear: string;
+        setOffYear: string;
+        refundAmount: number | null;
+        previousYearRelates: string;
+    };
+    creditUnderDispute: boolean;
+    disputeDetails?: {
+        natureAndAmountOfIncome: string;
+        amountOfTaxDisputed: number | null;
+    };
 }
+
+export interface TrustData {
+    disallowedReceipts12A: IncomeSource;
+    disallowedReceipts10_23C: IncomeSource;
+}
+
+export interface TrustComputationResult {
+    typeOfTrust: string;
+    sectionApplied: string;
+    totalIncomeBeforeExemption: number;
+    exemptIncome: number;
+    taxableIncome: number;
+    applicableRate: number; // as decimal
+    applicableRateDisplay: string;
+    violationFlags: string[];
+    finalTax: number;
+}
+
 
 export interface TaxData {
   assesseeName: string;
   pan: string;
   assessmentYear: string;
-  taxpayerType: 'individual' | 'huf' | 'company' | 'firm' | 'llp' | 'aop' | 'boi' | 'local authority' | 'artificial juridical person';
+  taxpayerType: 'individual' | 'huf' | 'company' | 'firm' | 'llp' | 'aop' | 'boi' | 'local authority' | 'artificial juridical person' | 'trust';
   residentialStatus: ResidentialStatus;
   companyType?: 'domestic' | 'foreign';
   previousYearTurnover?: number | null;
   age: 'below60' | '60to80' | 'above80';
   taxRegime: TaxRegime;
+  
+  trustData: TrustData;
+
   salary: Salary;
   houseProperty: HouseProperty;
   pgbp: PGBP;
@@ -344,9 +384,9 @@ export interface InterestResult {
     };
 }
 
-export interface IncomeBreakdown {
-    returned: number;
-    additions: number;
+export interface DetailedIncomeBreakdown {
+    baseAmount: number;
+    totalAdditions: number;
     assessed: number;
 }
 
@@ -382,15 +422,16 @@ export interface ComputationResult {
   advanceTax: number;
   netPayable: number;
   interest: InterestResult;
+  trustComputation: TrustComputationResult | null;
   breakdown: {
     income: {
-      salary: IncomeBreakdown;
-      houseProperty: IncomeBreakdown;
-      pgbp: IncomeBreakdown;
-      capitalGains: IncomeBreakdown;
+      salary: DetailedIncomeBreakdown;
+      houseProperty: DetailedIncomeBreakdown;
+      pgbp: DetailedIncomeBreakdown & { netProfit: number };
+      capitalGains: DetailedIncomeBreakdown;
       capitalGainsBreakdown: CapitalGainsBreakdown; // This remains based on assessed values
-      otherSources: IncomeBreakdown;
-      winnings: IncomeBreakdown;
+      otherSources: DetailedIncomeBreakdown;
+      winnings: DetailedIncomeBreakdown;
       deemed: number; // Deemed income is always an addition
       international: {
           netIncomeAdded: number;

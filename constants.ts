@@ -7,7 +7,7 @@ export const ASSESSMENT_YEARS = [
 ];
 
 export const TABS = [
-  'Profile',
+  'Assessee Details',
   'Salary',
   'House Property',
   'PGBP',
@@ -71,6 +71,8 @@ const commonConfig = {
       OFFSHORE_FUND_UNITS_INCOME_115AB: 0.10,
       OFFSHORE_FUND_UNITS_LTCG_115AB: 0.10,
       SPECIFIED_FUND_UNITS_INCOME_115AE: 0.10,
+      // --- Trust / AOP ---
+      AOP_MMR: 0.30, // Base rate, surcharge will apply
     },
 };
 

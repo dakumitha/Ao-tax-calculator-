@@ -1,6 +1,6 @@
 
-import React, { useState, useReducer, useMemo } from 'react';
-import { TaxData, TaxRegime, IncomeSource, ComputationResult, AssessmentType, AdditionItem, IncomeBreakdown, SetOffDetail, PresumptiveScheme, Vehicle44AE, ResidentialStatus, InternationalIncomeItem, InternationalIncomeNature, ComplianceStatus } from './types';
+import React, { useState, useReducer, useMemo, useEffect } from 'react';
+import { TaxData, TaxRegime, IncomeSource, ComputationResult, AssessmentType, AdditionItem, DetailedIncomeBreakdown, SetOffDetail, PresumptiveScheme, Vehicle44AE, ResidentialStatus, InternationalIncomeItem, InternationalIncomeNature, ComplianceStatus, TrustData } from './types';
 import { TABS, ASSESSMENT_YEARS, YEARLY_CONFIGS, FILING_DUE_DATES, AUDIT_TAXPAYER_TYPES } from './constants';
 import { calculateTax } from './services/taxCalculator';
 
@@ -36,6 +36,7 @@ const newInternationalIncomeItem = (): InternationalIncomeItem => ({
     nature: InternationalIncomeNature.Salary,
     amountInINR: null,
     taxPaidInINR: null,
+    taxRateOutsideIndia: null,
     taxPayableUnder115JBJC: null,
     dtaaApplicable: false,
     applicableDtaaArticle: '15', // Default for Salary
@@ -48,6 +49,13 @@ const newInternationalIncomeItem = (): InternationalIncomeItem => ({
         form3CEBStatus: ComplianceStatus.NotApplicable,
     },
     form67Filed: false,
+    refundClaimed: false,
+    creditUnderDispute: false,
+});
+
+const newTrustData = (): TrustData => ({
+    disallowedReceipts12A: newIncomeSource(),
+    disallowedReceipts10_23C: newIncomeSource(),
 });
 
 
@@ -61,6 +69,7 @@ const initialTaxData: TaxData = {
   taxRegime: TaxRegime.Old, // Default to Old, as selection is removed. Comparison view handles both.
   companyType: 'domestic',
   previousYearTurnover: null,
+  trustData: newTrustData(),
   salary: {
     employeeType: 'non-government',
     basicSalary: newIncomeSource(),
@@ -144,7 +153,8 @@ const initialTaxData: TaxData = {
     adjustment50C: newIncomeSource(),
     costOfImprovement: newIncomeSource(),
     exemption54: newIncomeSource(),
-    exemption54B: newIncomeSource(),
+    exemption54B_ltcg: newIncomeSource(),
+    exemption54B_stcg: newIncomeSource(),
     exemption54D: newIncomeSource(),
     exemption54EC: newIncomeSource(),
     exemption54EE: newIncomeSource(),
@@ -157,7 +167,7 @@ const initialTaxData: TaxData = {
     adjustment50D: newIncomeSource(),
     adjustment43CA: newIncomeSource(),
   },
-  otherSources: { otherIncomes: newIncomeSource(), winnings: newIncomeSource(), exemptIncome: newIncomeSource(), disallowance14A: newIncomeSource(), deemedDividend2_22_e: newIncomeSource(), gifts56_2_x: newIncomeSource(), familyPension: newIncomeSource(), interestOnEnhancedCompensation: newIncomeSource(), raceHorseIncome: newIncomeSource() },
+  otherSources: { otherIncomes: newIncomeSource(), winnings: newIncomeSource(), exemptIncome: newIncomeSource(), otherExemptIncomeSec10: newIncomeSource(), disallowance14A: newIncomeSource(), deemedDividend2_22_e: newIncomeSource(), gifts56_2_x: newIncomeSource(), familyPension: newIncomeSource(), interestOnEnhancedCompensation: newIncomeSource(), raceHorseIncome: newIncomeSource() },
   deemedIncome: { sec68_cashCredits: newIncomeSource(), sec69_unexplainedInvestments: newIncomeSource(), sec69A_unexplainedMoney: newIncomeSource(), sec69B_investmentsNotDisclosed: newIncomeSource(), sec69C_unexplainedExpenditure: newIncomeSource(), sec69D_hundiBorrowing: newIncomeSource() },
   internationalIncome: [],
   deductions: { 
@@ -227,9 +237,19 @@ function taxDataReducer(state: TaxData, action: Action): TaxData {
                  const keys = action.payload.path.split('.');
                  let current = newState.internationalIncome[itemIndex];
                  for (let i = 0; i < keys.length - 1; i++) {
+                     if (current[keys[i]] === undefined) current[keys[i]] = {};
                      current = (current as any)[keys[i]];
                  }
                  (current as any)[keys[keys.length - 1]] = action.payload.value;
+
+                 if (action.payload.path === 'nature') {
+                    const newNature = action.payload.value as InternationalIncomeNature;
+                    if (newNature === InternationalIncomeNature.LongTermCapitalGain) {
+                        newState.internationalIncome[itemIndex].isLTCG = true;
+                    } else if (newNature === InternationalIncomeNature.ShortTermCapitalGain) {
+                        newState.internationalIncome[itemIndex].isLTCG = false;
+                    }
+                 }
              }
              return newState;
         }
@@ -291,7 +311,11 @@ function taxDataReducer(state: TaxData, action: Action): TaxData {
         if (action.payload.path === 'assessmentYear' && !YEARLY_CONFIGS[year].NEW_REGIME_AVAILABLE && newState.taxRegime === TaxRegime.New) {
             newState.taxRegime = TaxRegime.Old;
         }
+        if (action.payload.path === 'taxpayerType' && action.payload.value === 'trust') {
+            newState.taxpayerType = 'trust';
+        }
     }
+
 
     return newState;
 }
@@ -343,25 +367,30 @@ const SingleInputField: React.FC<{ label: string; path: string; value: number | 
 };
 
 const IncomeTableRow: React.FC<{
-    label: string;
+    label: React.ReactNode;
     path: string;
     value: IncomeSource;
     dispatch: React.Dispatch<Action>;
     helpText?: string;
     disabled?: boolean;
 }> = ({ label, path, value, dispatch, helpText, disabled = false }) => {
-    // Ensure there is always at least one item to bind the input to.
-    if (!value.additions || value.additions.length === 0) {
-        dispatch({ type: 'ADD_ITEM', payload: { path } });
-    }
     
+    useEffect(() => {
+        // This effect ensures that every IncomeSource always has at least one AdditionItem.
+        // The check for `value` is a safeguard against it being transiently undefined.
+        if (value && (!value.additions || value.additions.length === 0)) {
+            dispatch({ type: 'ADD_ITEM', payload: { path } });
+        }
+    }, [path, value, dispatch]);
+
     const handleItemChange = (id: string, field: 'amount' | 'location', val: any) => {
         const value = field === 'amount' ? parseFormattedValue(val) : val;
         dispatch({ type: 'UPDATE_ITEM', payload: { path, id, field, value } });
     };
 
-    const additionsList = Array.isArray(value.additions) ? value.additions : [];
-    const firstItem = additionsList.length > 0 ? additionsList[0] : null;
+    // Before the useEffect runs for the first time, `value.additions` might be empty.
+    // We get the first item to bind to the input.
+    const firstItem = value?.additions?.[0];
 
     return (
         <tr className="border-b last:border-0 align-top">
@@ -370,7 +399,7 @@ const IncomeTableRow: React.FC<{
                 {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
             </td>
             <td className="p-2">
-                 {firstItem && (
+                 {firstItem ? (
                     <input 
                         type="text" 
                         placeholder="Amount" 
@@ -379,7 +408,94 @@ const IncomeTableRow: React.FC<{
                         disabled={disabled}
                         className={`p-2 border rounded-md text-left w-full text-sm ${disabled ? 'bg-gray-200 cursor-not-allowed' : 'bg-white'}`}
                     />
+                ) : (
+                    // Render a disabled input as a placeholder until the item is added by the effect.
+                    <input type="text" disabled className="p-2 border rounded-md text-left w-full text-sm bg-gray-200" />
                 )}
+            </td>
+        </tr>
+    );
+};
+
+const DescribedIncomeTableRow: React.FC<{
+    label: string;
+    path: string;
+    value: IncomeSource;
+    dispatch: React.Dispatch<Action>;
+    helpText?: string;
+}> = ({ label, path, value, dispatch, helpText }) => {
+    const [description, setDescription] = useState('');
+    const [warning, setWarning] = useState('');
+    const KNOWN_SALARY_EXEMPTIONS = useMemo(() => [
+        { key: 'hra', text: 'HRA', section: '10(13A)' },
+        { key: 'lta', text: 'LTA', section: '10(5)' },
+        { key: 'gratuity', text: 'Gratuity', section: '10(10)' },
+        { key: 'leave', text: 'Leave Encashment', section: '10(10AA)' },
+        { key: 'pension', text: 'Pension', section: '10(10A)' },
+        { key: 'retrenchment', text: 'Retrenchment', section: '10(10B)' },
+        { key: 'vrs', text: 'VRS', section: '10(10C)' },
+        { key: 'provident', text: 'Provident Fund', section: '10(11)' },
+        { key: 'superannuation', text: 'Superannuation', section: '10(13)' },
+        { key: 'allowance', text: 'Special Allowances', section: '10(14)' },
+    ], []);
+
+    useEffect(() => {
+        if (!description) {
+            setWarning('');
+            return;
+        }
+        const lowerDesc = description.toLowerCase();
+        const found = KNOWN_SALARY_EXEMPTIONS.find(ex => 
+            lowerDesc.includes(ex.text.toLowerCase()) || lowerDesc.includes(ex.section)
+        );
+        if (found) {
+            setWarning(`Note: Disallowance for ${found.text} (${ex.section}) should be entered in the 'Salary' tab for accurate computation.`);
+        } else {
+            setWarning('');
+        }
+    }, [description, KNOWN_SALARY_EXEMPTIONS]);
+    
+    useEffect(() => {
+        if (value && (!value.additions || value.additions.length === 0)) {
+            dispatch({ type: 'ADD_ITEM', payload: { path } });
+        }
+    }, [path, value, dispatch]);
+
+    const handleItemChange = (id: string, val: string) => {
+        const parsedValue = parseFormattedValue(val);
+        dispatch({ type: 'UPDATE_ITEM', payload: { path, id, field: 'amount', value: parsedValue } });
+    };
+
+    const firstItem = value?.additions?.[0];
+
+    return (
+        <tr className="border-b last:border-0 align-top">
+            <td className="p-2 align-top pt-4">
+                <p className="font-medium text-sm text-gray-700">{label}</p>
+                {helpText && <p className="text-xs text-gray-500">{helpText}</p>}
+            </td>
+            <td className="p-2">
+                <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                        type="text"
+                        placeholder="Description of exemption (e.g., Sec 10(1))"
+                        value={description}
+                        onChange={e => setDescription(e.target.value)}
+                        className="p-2 border rounded-md text-left w-full sm:w-2/3 text-sm"
+                    />
+                    {firstItem ? (
+                        <input 
+                            type="text" 
+                            placeholder="Amount" 
+                            value={formatInputValue(firstItem.amount)}
+                            onChange={e => handleItemChange(firstItem.id, e.target.value)}
+                            className="p-2 border rounded-md text-left w-full sm:w-1/3 text-sm"
+                        />
+                    ) : (
+                        <input type="text" disabled className="p-2 border rounded-md text-left w-full sm:w-1/3 text-sm bg-gray-200" />
+                    )}
+                </div>
+                {warning && <p className="text-xs text-amber-700 mt-1">{warning}</p>}
             </td>
         </tr>
     );
@@ -409,13 +525,14 @@ const ComparisonRow: React.FC<{ label: React.ReactNode; oldVal: number; newVal: 
 const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ data, result }) => {
     const isIndividualLike = ['individual', 'huf', 'aop', 'boi', 'artificial juridical person'].includes(data.taxpayerType);
     const isNewRegimeAvailable = YEARLY_CONFIGS[data.assessmentYear].NEW_REGIME_AVAILABLE;
-
+    const isComparisonAvailable = data.taxpayerType !== 'trust' && isIndividualLike && isNewRegimeAvailable;
+    
     const handlePrint = () => {
         window.print();
     };
 
     const comparisonResults = useMemo(() => {
-        if (isIndividualLike && isNewRegimeAvailable) {
+        if (isComparisonAvailable) {
             const oldRegimeData = { ...JSON.parse(JSON.stringify(data)), taxRegime: TaxRegime.Old };
             const newRegimeData = { ...JSON.parse(JSON.stringify(data)), taxRegime: TaxRegime.New };
             return {
@@ -424,10 +541,21 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
             };
         }
         return null;
-    }, [data, isIndividualLike, isNewRegimeAvailable]);
+    }, [data, isComparisonAvailable]);
+
+    const renderDetailedIncomeHead = (label: string, oldBreakdown: DetailedIncomeBreakdown, newBreakdown: DetailedIncomeBreakdown) => {
+        const netProfitOld = (oldBreakdown as any).netProfit ?? null;
+        const netProfitNew = (newBreakdown as any).netProfit ?? null;
+
+        return (<>
+            <ComparisonRow label={label} oldVal={oldBreakdown.assessed} newVal={newBreakdown.assessed} isBold />
+            {netProfitOld != null && <ComparisonRow label="&nbsp;&nbsp;Net Profit / Base" oldVal={netProfitOld} newVal={netProfitNew} />}
+            <ComparisonRow label="&nbsp;&nbsp;Add: Additions / Disallowances" oldVal={oldBreakdown.totalAdditions} newVal={newBreakdown.totalAdditions} />
+        </>)
+    };
 
 
-    if (comparisonResults) {
+    if (isComparisonAvailable && comparisonResults) {
         const { old: oldResult, new: newResult } = comparisonResults;
         const anyLossesToCarryForwardOld = Object.values(oldResult.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
         const anyLossesToCarryForwardNew = Object.values(newResult.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
@@ -462,17 +590,11 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
                                 {data.interestCalc.incomeAsPerEarlierAssessment != null && (
                                     <ComparisonRow label="Income as per Earlier Assessment" oldVal={data.interestCalc.incomeAsPerEarlierAssessment} newVal={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
                                 )}
-                                <ComparisonRow label="Income from Salary" oldVal={oldResult.breakdown.income.salary.assessed} newVal={newResult.breakdown.income.salary.assessed} isBold />
-                                {(oldResult.breakdown.nav > 0 || newResult.breakdown.nav > 0 || oldResult.breakdown.income.houseProperty.assessed !== 0 || newResult.breakdown.income.houseProperty.assessed !== 0) &&
-                                    <>
-                                        <ComparisonRow label="&nbsp;&nbsp;Net Annual Value (NAV)" oldVal={oldResult.breakdown.nav} newVal={newResult.breakdown.nav} />
-                                        <ComparisonRow label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" oldVal={oldResult.breakdown.standardDeduction24a} newVal={newResult.breakdown.standardDeduction24a} isNegative />
-                                    </>
-                                }
-                                <ComparisonRow label="Income from House Property" oldVal={oldResult.breakdown.income.houseProperty.assessed} newVal={newResult.breakdown.income.houseProperty.assessed} isBold />
-                                <ComparisonRow label="Profits and Gains of Business or Profession" oldVal={oldResult.breakdown.income.pgbp.assessed} newVal={newResult.breakdown.income.pgbp.assessed} isBold />
-                                <ComparisonRow label="Capital Gains" oldVal={oldResult.breakdown.income.capitalGains.assessed} newVal={newResult.breakdown.income.capitalGains.assessed} isBold />
-                                <ComparisonRow label="Income from Other Sources" oldVal={oldResult.breakdown.income.otherSources.assessed} newVal={newResult.breakdown.income.otherSources.assessed} isBold />
+                                {renderDetailedIncomeHead("Income from Salary", oldResult.breakdown.income.salary, newResult.breakdown.income.salary)}
+                                {renderDetailedIncomeHead("Income from House Property", oldResult.breakdown.income.houseProperty, newResult.breakdown.income.houseProperty)}
+                                {renderDetailedIncomeHead("Profits and Gains of Business or Profession", oldResult.breakdown.income.pgbp, newResult.breakdown.income.pgbp)}
+                                {renderDetailedIncomeHead("Capital Gains", oldResult.breakdown.income.capitalGains, newResult.breakdown.income.capitalGains)}
+                                {renderDetailedIncomeHead("Income from Other Sources", oldResult.breakdown.income.otherSources, newResult.breakdown.income.otherSources)}
                                 { (oldResult.breakdown.income.international.netIncomeAdded > 0 || newResult.breakdown.income.international.netIncomeAdded > 0) &&
                                     <ComparisonRow label="International Income" oldVal={oldResult.breakdown.income.international.netIncomeAdded} newVal={newResult.breakdown.income.international.netIncomeAdded} isBold />
                                 }
@@ -601,12 +723,20 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
         </>);
     }
 
-    // Fallback for non-comparison cases (e.g., companies, firms, older AYs)
-    const renderIncomeHead = (label: string, breakdown: IncomeBreakdown) => (
-        <tr className="font-bold bg-gray-50 border-b">
-            <td className="p-2 text-left">{label}</td>
-            <td className="p-2 text-right">{breakdown.assessed < 0 ? `(${formatCurrency(Math.abs(breakdown.assessed))})` : formatCurrency(breakdown.assessed)}</td>
-        </tr>
+    // Fallback for non-comparison cases (e.g., companies, firms, older AYs, trusts)
+    const renderIncomeHead = (label: string, breakdown: DetailedIncomeBreakdown) => (
+        <>
+            <tr className="font-bold bg-gray-50 border-b">
+                <td className="p-2 text-left">{label}</td>
+                <td className="p-2 text-right">{breakdown.assessed < 0 ? `(${formatCurrency(Math.abs(breakdown.assessed))})` : formatCurrency(breakdown.assessed)}</td>
+            </tr>
+             {(breakdown as any).netProfit != null && 
+                <Row label="&nbsp;&nbsp;Net Profit / Base" amount={(breakdown as any).netProfit} />
+             }
+             {breakdown.totalAdditions !== 0 && 
+                <Row label="&nbsp;&nbsp;Add: Additions / Disallowances" amount={breakdown.totalAdditions} />
+             }
+        </>
     );
 
     const Row: React.FC<{ label: React.ReactNode; amount: number; isBold?: boolean; isNegative?: boolean; isAccent?: boolean }> = ({ label, amount, isBold = false, isNegative = false, isAccent = false }) => (
@@ -617,6 +747,7 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
     );
     
     const anyLossesToCarryForward = Object.values(result.lossesCarriedForward).some(loss => typeof loss === 'number' && loss > 0);
+    const trustResult = result.trustComputation;
 
     return (<>
      <div className="flex justify-end mb-4 no-print">
@@ -634,7 +765,29 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
                 <div><strong>Assessment Year:</strong> {data.assessmentYear}</div>
             </div>
         </div>
-        <Card title={`Computation Summary (${data.taxRegime} Regime)`} className="card-for-print">
+
+        {trustResult && data.taxpayerType === 'trust' && (
+             <Card title="Trust Assessment Output" className="bg-blue-50 card-for-print">
+                <div className="space-y-3">
+                    <div className="flex justify-between p-2 rounded"><strong className="text-gray-600">Type of Trust:</strong> <span className="font-semibold text-gray-900">{trustResult.typeOfTrust}</span></div>
+                    <div className="flex justify-between p-2 rounded bg-white"><strong className="text-gray-600">Section Applied:</strong> <span className="font-semibold text-gray-900">{trustResult.sectionApplied}</span></div>
+                    <div className="flex justify-between p-2 rounded"><strong className="text-gray-600">Total Income before Disallowances:</strong> <span className="font-mono">{formatCurrency(trustResult.totalIncomeBeforeExemption)}</span></div>
+                    <div className="flex justify-between p-2 rounded bg-white"><strong className="text-gray-600">Exempt Income:</strong> <span className="font-mono text-green-700">{formatCurrency(trustResult.exemptIncome)}</span></div>
+                    <div className="flex justify-between p-2 rounded"><strong className="text-gray-600">Taxable Income:</strong> <span className="font-mono font-bold text-red-700">{formatCurrency(trustResult.taxableIncome)}</span></div>
+                    <div className="flex justify-between p-2 rounded bg-white"><strong className="text-gray-600">Applicable Rate:</strong> <span className="font-semibold text-gray-900">{trustResult.applicableRateDisplay}</span></div>
+                </div>
+                {trustResult.violationFlags.length > 0 && (
+                    <div className="mt-4 p-4 border-t border-blue-200">
+                        <h4 className="font-bold text-red-600 mb-2">Assessment Notes:</h4>
+                        <ul className="list-disc list-inside space-y-1 text-red-700 text-sm">
+                            {trustResult.violationFlags.map((flag, i) => <li key={i}>{flag}</li>)}
+                        </ul>
+                    </div>
+                )}
+             </Card>
+        )}
+
+        <Card title={`Computation Summary ${data.taxpayerType !== 'trust' ? `(${data.taxRegime} Regime)` : ''}`} className="card-for-print">
         <div className="overflow-x-auto">
             <table className="w-full text-sm">
             <thead>
@@ -647,13 +800,7 @@ const SummaryView: React.FC<{ data: TaxData; result: ComputationResult }> = ({ d
                 {data.interestCalc.incomeAsPerEarlierAssessment != null && (
                     <Row label="Income as per Earlier Assessment" amount={data.interestCalc.incomeAsPerEarlierAssessment} isBold isAccent />
                 )}
-                {renderIncomeHead("Income from Salary", result.breakdown.income.salary)}
-                {(result.breakdown.nav > 0 || result.breakdown.income.houseProperty.assessed !== 0) &&
-                    <>
-                        <Row label="&nbsp;&nbsp;Net Annual Value (NAV)" amount={result.breakdown.nav} />
-                        <Row label="&nbsp;&nbsp;Less: Standard Deduction u/s 24(a)" amount={result.breakdown.standardDeduction24a} isNegative />
-                    </>
-                }
+                {data.taxpayerType !== 'trust' && renderIncomeHead("Income from Salary", result.breakdown.income.salary)}
                 {renderIncomeHead("Income from House Property", result.breakdown.income.houseProperty)}
                 {renderIncomeHead("Profits and Gains of Business or Profession", result.breakdown.income.pgbp)}
                 {renderIncomeHead("Capital Gains", result.breakdown.income.capitalGains)}
@@ -793,24 +940,68 @@ const DateInput: React.FC<DateInputProps> = ({ label, value, onChange }) => {
     );
 };
 
+const FormField: React.FC<{ label: string; children: React.ReactNode; helpText?: string; className?: string }> = ({ label, children, helpText, className }) => (
+    <div className={className}>
+        <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+        {children}
+        {helpText && <p className="mt-1 text-xs text-gray-500">{helpText}</p>}
+    </div>
+);
+
+const RadioGroup: React.FC<{ label: string, path: string, value: boolean | null, dispatch: React.Dispatch<Action> }> = ({ label, path, value, dispatch }) => (
+    <div>
+        <label className="block text-sm font-medium text-gray-700">{label}</label>
+        <div className="flex items-center gap-4 mt-1">
+            <label className="flex items-center"><input type="radio" name={path} checked={value === true} onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path, value: true } })} className="h-4 w-4" /> <span className="ml-2">Yes</span></label>
+            <label className="flex items-center"><input type="radio" name={path} checked={value === false} onChange={() => dispatch({ type: 'UPDATE_FIELD', payload: { path, value: false } })} className="h-4 w-4" /> <span className="ml-2">No</span></label>
+        </div>
+    </div>
+);
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Profile');
+  const [activeTab, setActiveTab] = useState('Assessee Details');
   const [taxData, dispatch] = useReducer(taxDataReducer, initialTaxData);
 
   const handleReset = () => {
     if (window.confirm('Are you sure you want to reset all data? This action cannot be undone.')) {
       dispatch({ type: 'RESET_STATE', payload: initialTaxData });
-      alert('Data has been reset.');
+      setActiveTab('Assessee Details');
     }
   };
 
   const computationResult = useMemo(() => calculateTax(taxData), [taxData]);
 
-  const currentYearConfig = YEARLY_CONFIGS[taxData.assessmentYear];
+  const totalCapitalGainsAdditions = useMemo(() => {
+    const { capitalGains } = taxData;
+    const getSourceValue = (source: IncomeSource) => {
+        if (!source || !source.additions) return 0;
+        return source.additions.reduce((acc, item) => acc + (item.amount ?? 0), 0);
+    };
+    
+    return getSourceValue(capitalGains.adjustment50C) +
+           getSourceValue(capitalGains.costOfImprovement) +
+           getSourceValue(capitalGains.exemption54) +
+           getSourceValue(capitalGains.exemption54B_ltcg) +
+           getSourceValue(capitalGains.exemption54B_stcg) +
+           getSourceValue(capitalGains.exemption54D) +
+           getSourceValue(capitalGains.exemption54EC) +
+           getSourceValue(capitalGains.exemption54EE) +
+           getSourceValue(capitalGains.exemption54F) +
+           getSourceValue(capitalGains.exemption54G) +
+           getSourceValue(capitalGains.exemption54GA) +
+           getSourceValue(capitalGains.exemption54GB) +
+           getSourceValue(capitalGains.adjustment50) +
+           getSourceValue(capitalGains.adjustment50CA) +
+           getSourceValue(capitalGains.adjustment50D);
+}, [taxData.capitalGains]);
+
+  
   const isIndividualLike = ['individual', 'huf', 'aop', 'boi', 'artificial juridical person'].includes(taxData.taxpayerType);
+  const salaryIsApplicable = ['individual', 'huf'].includes(taxData.taxpayerType);
+
 
   const dynamicTabs = TABS.filter(tab => {
-    if (!isIndividualLike && tab === 'Salary') return false;
+    if (tab === 'Salary' && !salaryIsApplicable) return false;
     return true;
   });
 
@@ -824,18 +1015,12 @@ export default function App() {
         </thead>
     );
 
-    const FormField: React.FC<{ label: string; children: React.ReactNode; helpText?: string; className?: string }> = ({ label, children, helpText, className }) => (
-        <div className={className}>
-            <label className="block text-sm font-medium text-gray-700">{label}</label>
-            {children}
-            {helpText && <p className="mt-1 text-xs text-gray-500">{helpText}</p>}
-        </div>
-    );
-
     switch (activeTab) {
-      case 'Profile':
+      case 'Assessee Details':
+        const { trustData } = taxData;
+
         return (<>
-          <Card title="Taxpayer Profile">
+          <Card title="Assessee Details">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                <div>
                  <label className="block text-gray-600 font-medium text-sm mb-1">Name of Assessee</label>
@@ -845,7 +1030,8 @@ export default function App() {
                  <label className="block text-gray-600 font-medium text-sm mb-1">PAN</label>
                  <input type="text" value={taxData.pan} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'pan', value: e.target.value.toUpperCase()}})} className="w-full p-2 border rounded-md uppercase" maxLength={10} />
                </div>
-               <div>
+               
+                <div>
                  <label className="block text-gray-600 font-medium text-sm mb-1">Taxpayer Type</label>
                  <select value={taxData.taxpayerType} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'taxpayerType', value: e.target.value}})} className="w-full p-2 border rounded-md capitalize">
                    <option value="individual">Individual</option>
@@ -857,6 +1043,7 @@ export default function App() {
                    <option value="boi">Body of Individuals (BOI)</option>
                    <option value="local authority">Local Authority</option>
                    <option value="artificial juridical person">Artificial Juridical Person</option>
+                   <option value="trust">Trust / Institution</option>
                  </select>
                </div>
                 <div>
@@ -881,7 +1068,7 @@ export default function App() {
                     <SingleInputField label="Turnover in PY 22-23 (for AY 24-25)" path="previousYearTurnover" value={taxData.previousYearTurnover} dispatch={dispatch} />
                 </>
                )}
-               {isIndividualLike && taxData.taxpayerType === 'individual' &&
+               {taxData.taxpayerType === 'individual' &&
                 <div>
                     <label className="block text-gray-600 font-medium text-sm mb-1">Age Group</label>
                     <select value={taxData.age} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'age', value: e.target.value}})} className="w-full p-2 border rounded-md">
@@ -897,6 +1084,51 @@ export default function App() {
                 <SingleInputField label="Advance Tax Paid (Total)" path="advanceTax" value={taxData.advanceTax} dispatch={dispatch} />
             </div>
           </Card>
+          
+           <Card title="Profile Adjustments">
+                <table className="w-full table-fixed">
+                     <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
+                        <tr>
+                            <th className="p-2 text-left font-semibold w-2/5">Particulars</th>
+                            <th className="p-2 text-left font-semibold w-3/5">Entry (Description & Amount)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                         <DescribedIncomeTableRow
+                            label="Disallowed Other Exempt Income (u/s 10)" 
+                            path="otherSources.otherExemptIncomeSec10" 
+                            value={taxData.otherSources.otherExemptIncomeSec10} 
+                            dispatch={dispatch} 
+                            helpText="Enter any Sec 10 exemption not covered elsewhere (e.g., Salary tab)."
+                        />
+                    </tbody>
+                </table>
+           </Card>
+
+          {taxData.taxpayerType === 'trust' && (
+              <Card title="Trust / Institution Disallowances">
+                <table className="w-full table-fixed">
+                  {tableHeader}
+                  <tbody>
+                    <IncomeTableRow
+                      label={<>Receipts Disallowed u/s 12A/12AA/12AB</>}
+                      path="trustData.disallowedReceipts12A"
+                      value={trustData.disallowedReceipts12A}
+                      dispatch={dispatch}
+                      helpText="Enter amount of income to be disallowed due to violation of Sec 11, 12, or 13."
+                    />
+                    <IncomeTableRow
+                      label={<>Receipts Disallowed u/s 10(23C)</>}
+                      path="trustData.disallowedReceipts10_23C"
+                      value={trustData.disallowedReceipts10_23C}
+                      dispatch={dispatch}
+                      helpText="Enter amount of income to be disallowed due to violation of conditions under Sec 10(23C)."
+                    />
+                  </tbody>
+                </table>
+              </Card>
+          )}
+
            <Card title="Prior Assessment Details">
                 <SingleInputField 
                     label="Net Income as per 143(1) / Earlier Assessment" 
@@ -1058,7 +1290,7 @@ export default function App() {
                           <p className="text-xs text-gray-500">(Gross Rent - Municipal Taxes)</p>
                       </td>
                       <td className="p-2 align-top pt-3">
-                          <div className="p-2 bg-gray-200 rounded-md text-right font-mono">
+                          <div className="p-2 bg-gray-200 rounded-md text-left font-mono">
                               {formatCurrency(computationResult.breakdown.nav)}
                           </div>
                       </td>
@@ -1069,7 +1301,7 @@ export default function App() {
                           <p className="text-xs text-gray-500">(30% of NAV)</p>
                       </td>
                       <td className="p-2 align-top pt-3">
-                          <div className="p-2 bg-gray-200 rounded-md text-right font-mono text-red-600">
+                          <div className="p-2 bg-gray-200 rounded-md text-left font-mono text-red-600">
                               ({formatCurrency(computationResult.breakdown.standardDeduction24a)})
                           </div>
                       </td>
@@ -1266,7 +1498,8 @@ export default function App() {
               </Card>
           );
       }
-      case 'Capital Gains': return <Card title="Capital Gains Details">
+      case 'Capital Gains': {
+          return <Card title="Capital Gains Details">
             <table className="w-full table-fixed">
                 {tableHeader}
                 <tbody>
@@ -1281,7 +1514,8 @@ export default function App() {
                   <IncomeTableRow label="Deemed Business Income (Sec 43CA - Stock-in-Trade)" path="capitalGains.adjustment43CA" value={taxData.capitalGains.adjustment43CA} dispatch={dispatch} helpText="Note: This is taxed under PGBP but entered here for convenience." />
                   <IncomeTableRow label="Disallowed Cost of Improvement" path="capitalGains.costOfImprovement" value={taxData.capitalGains.costOfImprovement} dispatch={dispatch} />
                   <IncomeTableRow label="Disallowed Exemption u/s 54" path="capitalGains.exemption54" value={taxData.capitalGains.exemption54} dispatch={dispatch} />
-                  <IncomeTableRow label="Disallowed Exemption u/s 54B" path="capitalGains.exemption54B" value={taxData.capitalGains.exemption54B} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54B (against LTCG)" path="capitalGains.exemption54B_ltcg" value={taxData.capitalGains.exemption54B_ltcg} dispatch={dispatch} />
+                  <IncomeTableRow label="Disallowed Exemption u/s 54B (against STCG)" path="capitalGains.exemption54B_stcg" value={taxData.capitalGains.exemption54B_stcg} dispatch={dispatch} />
                   <IncomeTableRow label="Disallowed Exemption u/s 54D" path="capitalGains.exemption54D" value={taxData.capitalGains.exemption54D} dispatch={dispatch} />
                   <IncomeTableRow label="Disallowed Exemption u/s 54EC" path="capitalGains.exemption54EC" value={taxData.capitalGains.exemption54EC} dispatch={dispatch} />
                   <IncomeTableRow label="Disallowed Exemption u/s 54EE" path="capitalGains.exemption54EE" value={taxData.capitalGains.exemption54EE} dispatch={dispatch} />
@@ -1291,7 +1525,16 @@ export default function App() {
                   <IncomeTableRow label="Disallowed Exemption u/s 54GB" path="capitalGains.exemption54GB" value={taxData.capitalGains.exemption54GB} dispatch={dispatch} />
               </tbody>
             </table>
+             <div className="mt-6 border-t pt-4">
+                <div className="flex justify-between items-center p-4 bg-gray-100 rounded-lg">
+                    <h3 className="text-lg font-bold text-gray-800">Total Additions under Capital Gains</h3>
+                    <span className="text-xl font-bold font-mono text-gray-900">
+                        ₹ {formatCurrency(totalCapitalGainsAdditions)}
+                    </span>
+                </div>
+            </div>
       </Card>;
+    }
       case 'Other Sources': {
         const totalHeadIncome = computationResult.breakdown.income.otherSources.assessed +
                               computationResult.breakdown.income.winnings.assessed +
@@ -1308,16 +1551,10 @@ export default function App() {
                       <IncomeTableRow label="Winnings from Lottery, etc." path="otherSources.winnings" value={taxData.otherSources.winnings} dispatch={dispatch} helpText="Taxable @ 30%" />
                       <IncomeTableRow label="Deemed Dividend (Sec 2(22)(e))" path="otherSources.deemedDividend2_22_e" value={taxData.otherSources.deemedDividend2_22_e} dispatch={dispatch} />
                       <IncomeTableRow label="Gifts (Sec 56(2)(x))" path="otherSources.gifts56_2_x" value={taxData.otherSources.gifts56_2_x} dispatch={dispatch} helpText="Taxable if aggregate > ₹50,000"/>
-                      <IncomeTableRow label="Exempt Income (e.g., Agri)" path="otherSources.exemptIncome" value={taxData.otherSources.exemptIncome} dispatch={dispatch} />
+                      <IncomeTableRow label="Agricultural Income (for rate purposes)" path="otherSources.exemptIncome" value={taxData.otherSources.exemptIncome} dispatch={dispatch} />
+                      <IncomeTableRow label="Disallowance u/s 14A" path="otherSources.disallowance14A" value={taxData.otherSources.disallowance14A} dispatch={dispatch} />
                   </tbody>
               </table>
-              <h3 className="font-bold text-md text-gray-800 mt-6 mb-2 pt-4 border-t">Disallowances</h3>
-                <table className="w-full table-fixed">
-                    {tableHeader}
-                    <tbody>
-                      <IncomeTableRow label="Disallowance (Sec 14A)" path="otherSources.disallowance14A" value={taxData.otherSources.disallowance14A} dispatch={dispatch} />
-                    </tbody>
-                </table>
             </Card>
             <Card title="Deemed Income (Taxable at Special Rates u/s 115BBE)">
                 <table className="w-full table-fixed">
@@ -1372,19 +1609,23 @@ export default function App() {
         
         const DTAA_ARTICLE_MAP: { [key in InternationalIncomeNature]?: string } = {
             [InternationalIncomeNature.Salary]: '15',
-            [InternationalIncomeNature.Interest]: '11',
+            [InternationalIncomeNature.InterestIncome]: '11',
             [InternationalIncomeNature.Dividend]: '10',
-            [InternationalIncomeNature.RoyaltyFTS]: '12',
-            [InternationalIncomeNature.BusinessIncome]: '7',
-            [InternationalIncomeNature.CapitalGains]: '13',
-            [InternationalIncomeNature.OtherIncome]: '21',
+            [InternationalIncomeNature.Royalty]: '12',
+            [InternationalIncomeNature.FeesForTechnicalServices]: '12',
+            [InternationalIncomeNature.BusinessProfessionalIncome]: '7',
+            [InternationalIncomeNature.LongTermCapitalGain]: '13',
+            [InternationalIncomeNature.ShortTermCapitalGain]: '13',
+            [InternationalIncomeNature.HouseProperty]: '6',
+            [InternationalIncomeNature.Others]: '21',
         };
 
         const handleNatureChange = (id: string, newNature: InternationalIncomeNature) => {
             let defaultSection: InternationalIncomeItem['specialSection'] = 'None';
             switch (newNature) {
-                case InternationalIncomeNature.RoyaltyFTS:
-                case InternationalIncomeNature.Interest:
+                case InternationalIncomeNature.Royalty:
+                case InternationalIncomeNature.FeesForTechnicalServices:
+                case InternationalIncomeNature.InterestIncome:
                 case InternationalIncomeNature.Dividend:
                     defaultSection = '115A';
                     break;
@@ -1396,57 +1637,89 @@ export default function App() {
             dispatch({ type: 'UPDATE_INTERNATIONAL_INCOME_ITEM', payload: { id, path: 'applicableDtaaArticle', value: defaultArticle } });
         }
 
-        const natureOptions = [
-            { value: InternationalIncomeNature.Salary, label: "Salary" },
-            { value: InternationalIncomeNature.Interest, label: "Interest" },
-            { value: InternationalIncomeNature.Dividend, label: "Dividend" },
-            { value: InternationalIncomeNature.RoyaltyFTS, label: "Royalty/FTS" },
-            { value: InternationalIncomeNature.BusinessIncome, label: "Business Income" },
-            { value: InternationalIncomeNature.CapitalGains, label: "Capital Gains" },
-            { value: InternationalIncomeNature.OtherIncome, label: "Other Income" },
-        ];
+        const natureOptions = Object.values(InternationalIncomeNature).map(value => ({
+            value: value,
+            label: value
+        }));
         
         return (
-            <Card title="International Income & Foreign Tax Credit (FTC) - Form 67">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="bg-gray-100 text-xs text-gray-500 uppercase">
-                            <tr>
-                                <th className="p-2 text-left">Country</th>
-                                <th className="p-2 text-left">Nature</th>
-                                <th className="p-2 text-right">Income (INR)</th>
-                                <th className="p-2 text-right">Foreign Tax Paid</th>
-                                <th className="p-2 text-right">Tax u/s 115JB/JC</th>
-                                <th className="p-2 text-center">DTAA?</th>
-                                <th className="p-2 text-left">DTAA Article</th>
-                                <th className="p-2 text-right">DTAA Rate (%)</th>
-                                <th className="p-2 text-center">Form 67?</th>
-                                <th className="p-2 text-center">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {internationalIncome.map((item) => (
-                                <tr key={item.id} className="border-b align-top">
-                                    <td className="p-1"><input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-1 border rounded-md text-sm" /></td>
-                                    <td className="p-1">
-                                        <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-1 border rounded-md text-sm">
-                                            {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                        </select>
-                                    </td>
-                                    <td className="p-1"><input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
-                                    <td className="p-1"><input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
-                                    <td className="p-1"><input type="text" value={formatInputValue(item.taxPayableUnder115JBJC)} onChange={e => handleUpdate(item.id, 'taxPayableUnder115JBJC', parseFormattedValue(e.target.value))} className="w-full p-1 border rounded-md text-sm text-right" /></td>
-                                    <td className="p-1 text-center pt-2"><input type="checkbox" checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4" /></td>
-                                    <td className="p-1"><input type="text" disabled={!item.dtaaApplicable} value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} className={`w-full p-1 border rounded-md text-sm ${!item.dtaaApplicable && 'bg-gray-100'}`} /></td>
-                                    <td className="p-1"><input type="number" disabled={!item.dtaaApplicable} step="0.01" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} className={`w-full p-1 border rounded-md text-sm text-right ${!item.dtaaApplicable && 'bg-gray-100'}`} /></td>
-                                    <td className="p-1 text-center pt-2"><input type="checkbox" checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4" /></td>
-                                    <td className="p-1 text-center"><button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-2 text-xl leading-none" aria-label="Remove Foreign Income Item">&times;</button></td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-                <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Add Foreign Income Source</button>
+            <Card title="International Income & Foreign Tax Credit (Form 67)">
+              <div className="space-y-6">
+                {internationalIncome.map((item, index) => (
+                    <div key={item.id} className="border p-4 rounded-lg bg-gray-50/50 relative shadow-sm">
+                        <div className="flex justify-between items-start mb-4">
+                            <h3 className="font-bold text-md text-gray-800">Foreign Income Source #{index + 1}</h3>
+                             <button onClick={() => dispatch({type: 'REMOVE_INTERNATIONAL_INCOME', payload: {id: item.id}})} className="text-red-500 hover:text-red-700 font-bold p-1 text-2xl leading-none" aria-label="Remove Foreign Income Item">&times;</button>
+                        </div>
+                        
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <FormField label="Country / Specified Territory">
+                                <input type="text" value={item.country} onChange={e => handleUpdate(item.id, 'country', e.target.value)} className="w-full p-2 border rounded-md text-sm" />
+                            </FormField>
+                            <FormField label="Source of Income">
+                                <select value={item.nature} onChange={e => handleNatureChange(item.id, e.target.value as InternationalIncomeNature)} className="w-full p-2 border rounded-md text-sm">
+                                    {natureOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                </select>
+                            </FormField>
+                            <FormField label="Income outside India (INR)">
+                                <input type="text" value={formatInputValue(item.amountInINR)} onChange={e => handleUpdate(item.id, 'amountInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
+                            </FormField>
+                            <FormField label="Tax paid outside India (INR)">
+                                <input type="text" value={formatInputValue(item.taxPaidInINR)} onChange={e => handleUpdate(item.id, 'taxPaidInINR', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
+                            </FormField>
+                             <FormField label="Tax payable u/s 115JB/JC">
+                                <input type="text" value={formatInputValue(item.taxPayableUnder115JBJC)} onChange={e => handleUpdate(item.id, 'taxPayableUnder115JBJC', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" />
+                            </FormField>
+                            <div className="flex items-center gap-3 bg-white p-2 border rounded-md h-full mt-auto mb-1">
+                                <input type="checkbox" id={`form67Filed_${item.id}`} checked={item.form67Filed} onChange={e => handleUpdate(item.id, 'form67Filed', e.target.checked)} className="h-4 w-4" />
+                                <label htmlFor={`form67Filed_${item.id}`} className="text-sm font-medium text-gray-700">Form 67 Filed?</label>
+                            </div>
+                        </div>
+
+                        <div className="border-t pt-4 mt-4">
+                            <h4 className="font-semibold text-gray-700 mb-2">Foreign Tax Credit Details</h4>
+                            <div className="flex items-center gap-3 bg-white p-2 border rounded-md mb-3">
+                                <input type="checkbox" id={`dtaaApplicable_${item.id}`} checked={item.dtaaApplicable} onChange={e => handleUpdate(item.id, 'dtaaApplicable', e.target.checked)} className="h-4 w-4" />
+                                <label htmlFor={`dtaaApplicable_${item.id}`} className="text-sm font-medium text-gray-700">DTAA is Applicable (Credit u/s 90/90A)</label>
+                            </div>
+                            {item.dtaaApplicable && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <FormField label="Article No. of DTAA">
+                                    <input type="text" value={item.applicableDtaaArticle} onChange={e => handleUpdate(item.id, 'applicableDtaaArticle', e.target.value)} className="w-full p-2 border rounded-md text-sm" />
+                                </FormField>
+                                <FormField label="Rate as per DTAA (%)">
+                                    <input type="number" step="0.01" value={item.taxRateAsPerDtaa != null ? item.taxRateAsPerDtaa * 100 : ''} onChange={e => handleUpdate(item.id, 'taxRateAsPerDtaa', e.target.value ? parseFloat(e.target.value)/100 : null)} className="w-full p-2 border rounded-md text-sm text-left" />
+                                </FormField>
+                            </div>}
+                        </div>
+                        <div className="border-t pt-4 mt-4">
+                             <h4 className="font-semibold text-gray-700 mb-2">Part B Details</h4>
+                             <div className="space-y-3">
+                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
+                                    <input type="checkbox" id={`refundClaimed_${item.id}`} checked={item.refundClaimed} onChange={e => handleUpdate(item.id, 'refundClaimed', e.target.checked)} className="h-4 w-4" />
+                                    <label htmlFor={`refundClaimed_${item.id}`} className="text-sm font-medium text-gray-700">Has any refund of foreign tax been claimed?</label>
+                                </div>
+                                {item.refundClaimed && <div className="p-3 border rounded-md bg-white ml-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <FormField label="Accounting year of loss"><input type="text" value={item.refundDetails?.lossYear ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.lossYear', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
+                                    <FormField label="Year(s) of set-off"><input type="text" value={item.refundDetails?.setOffYear ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.setOffYear', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
+                                    <FormField label="Refund claimed (₹)"><input type="text" value={formatInputValue(item.refundDetails?.refundAmount)} onChange={e => handleUpdate(item.id, 'refundDetails.refundAmount', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" /></FormField>
+                                    <FormField label="Previous year it relates to"><input type="text" value={item.refundDetails?.previousYearRelates ?? ''} onChange={e => handleUpdate(item.id, 'refundDetails.previousYearRelates', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
+                                </div>}
+
+                                <div className="flex items-center gap-3 bg-white p-2 border rounded-md">
+                                    <input type="checkbox" id={`creditDisputed_${item.id}`} checked={item.creditUnderDispute} onChange={e => handleUpdate(item.id, 'creditUnderDispute', e.target.checked)} className="h-4 w-4" />
+                                    <label htmlFor={`creditDisputed_${item.id}`} className="text-sm font-medium text-gray-700">Is the foreign tax credit under dispute?</label>
+                                </div>
+                                {item.creditUnderDispute && <div className="p-3 border rounded-md bg-white ml-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                     <FormField label="Nature and amount of income in dispute"><input type="text" value={item.disputeDetails?.natureAndAmountOfIncome ?? ''} onChange={e => handleUpdate(item.id, 'disputeDetails.natureAndAmountOfIncome', e.target.value)} className="w-full p-2 border rounded-md text-sm" /></FormField>
+                                     <FormField label="Amount of tax in dispute (₹)"><input type="text" value={formatInputValue(item.disputeDetails?.amountOfTaxDisputed)} onChange={e => handleUpdate(item.id, 'disputeDetails.amountOfTaxDisputed', parseFormattedValue(e.target.value))} className="w-full p-2 border rounded-md text-sm text-left" /></FormField>
+                                </div>}
+                             </div>
+                        </div>
+
+                    </div>
+                ))}
+              </div>
+                <button onClick={() => dispatch({type: 'ADD_INTERNATIONAL_INCOME'})} className="mt-6 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700 text-sm">Add Foreign Income Source</button>
                 
                 {internationalIncome.length > 0 && 
                 <div className="mt-6 border-t pt-4">
@@ -1477,18 +1750,23 @@ export default function App() {
                                     )
                                 })}
                             </tbody>
+                             <tfoot className="font-bold bg-gray-200">
+                                <tr>
+                                    <td className="p-2 text-left">Total</td>
+                                    <td className="p-2 text-right">{formatCurrency(intlResult.taxOnIncome)}</td>
+                                    <td colSpan={2} className="p-2"></td>
+                                    <td className="p-2 text-right">{formatCurrency(intlResult.totalFtcAllowed)}</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
-                </div>
-                }
-
-                <div className="mt-6 border-t pt-4">
-                    <div className="space-y-2 p-4 bg-gray-100 rounded-lg">
+                     <div className="mt-4 space-y-2 p-4 bg-gray-100 rounded-lg">
                          <div className="flex justify-between font-semibold"><span>Total Net Foreign Income Added</span><span className="font-mono">₹ {formatCurrency(intlResult.netIncomeAdded)}</span></div>
                          <div className="flex justify-between"><span>Total Indian Tax on Foreign Income</span><span className="font-mono">₹ {formatCurrency(intlResult.taxOnIncome)}</span></div>
                          <div className="flex justify-between font-bold text-green-700"><span>Total Foreign Tax Credit (FTC) Allowed</span><span className="font-mono">₹ {formatCurrency(intlResult.totalFtcAllowed)}</span></div>
                     </div>
                 </div>
+                }
             </Card>
         );
       }
@@ -1674,11 +1952,12 @@ export default function App() {
     }
   };
 
+
   return (
     <div className="bg-gray-100 min-h-screen">
       <header className="bg-gray-800 text-white shadow-md no-print">
         <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-            <h1 className="text-2xl font-bold">AO Tax Tool</h1>
+            <h1 className="text-2xl font-bold">AO Tax Tool: <span className="text-blue-300 capitalize">{taxData.taxpayerType.replace('_', ' / ')}</span></h1>
              <div className="flex items-center gap-4">
                 <button onClick={handleReset} className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-md text-sm">Reset</button>
                 <div className="text-right">
@@ -1713,9 +1992,8 @@ export default function App() {
               ))}
           </nav>
       </div>
-
-      <main className="container mx-auto p-4 md:p-6">
-        {renderContent()}
+       <main className="container mx-auto p-4 md:p-6">
+          {renderContent()}
       </main>
     </div>
   );
