@@ -742,7 +742,6 @@ export default function App() {
 
     switch (activeTab) {
       case 'Start Here':
-        const isWomanSlabApplicable = taxData.taxpayerType === 'individual' && parseInt(taxData.assessmentYear.split('-')[0]) <= 2012;
         return (<>
           <Card title="Start Here: Basic Information">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -777,16 +776,14 @@ export default function App() {
                             <option value="above80">Above 80 (Super Senior)</option>
                         </select>
                     </div>
-                    {isWomanSlabApplicable &&
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700">Gender</label>
-                            <select value={taxData.gender} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'gender', value: e.target.value as 'male' | 'female'}})} className="mt-1 w-full p-2 border rounded-md">
-                                <option value="male">Male</option>
-                                <option value="female">Female</option>
-                            </select>
-                            <p className="text-xs text-gray-500 mt-1">Relevant for special tax slab for resident women in AY 2012-13 and earlier.</p>
-                        </div>
-                    }
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Gender</label>
+                        <select value={taxData.gender} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'gender', value: e.target.value as 'male' | 'female'}})} className="mt-1 w-full p-2 border rounded-md">
+                            <option value="male">Male</option>
+                            <option value="female">Female</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">Relevant for special tax slab for resident women in AY 2012-13 and earlier.</p>
+                    </div>
                     <div className="md:col-span-2">
                          <fieldset>
                             <legend className="block text-sm font-medium text-gray-700 mb-2">Residential Status</legend>
@@ -960,7 +957,7 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4 w-full md:w-auto justify-center">
              <select value={taxData.assessmentYear} onChange={e => dispatch({type: 'UPDATE_FIELD', payload: {path: 'assessmentYear', value: e.target.value}})} className="p-2 border rounded-md font-semibold bg-gray-50 w-full md:w-auto flex-grow">
-                {ASSESSMENT_YEARS.map(year => <option key={year} value={year}>AY {year}</option>)}
+                {ASSESSMENT_YEARS.map(year => <option key={year} value={year}>{year}</option>)}
              </select>
              <button onClick={handleReset} className="text-sm bg-red-600 text-white px-3 py-2 rounded-md hover:bg-red-700 transition-colors flex-shrink-0">Reset</button>
           </div>
