@@ -1946,7 +1946,8 @@ export default function App() {
   return (
     <div className="min-h-screen font-sans">
       <header className="bg-white shadow-md p-4 no-print">
-        <div className="container mx-auto flex justify-between items-center">
+        <div className="container mx-auto flex justify-between items-center flex-wrap">
+          <h1 className="text-2xl font-bold">Comprehensive Tax Computation Framework</h1>
           <div className="flex items-center gap-3">
             <svg viewBox="0 0 36 24" className="h-8 w-12" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="36" height="24" fill="white"/>
@@ -1966,7 +1967,7 @@ export default function App() {
         </div>
       </header>
       
-      <main className="container mx-auto p-4 md:p-8">
+      <main className="container mx-auto p-4 md:p-8 max-w-7xl">
         <nav className="mb-8 overflow-x-auto whitespace-nowrap no-print">
           <ul className="flex border-b">
             {dynamicTabs.map(tab => (
