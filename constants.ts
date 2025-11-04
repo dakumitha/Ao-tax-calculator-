@@ -6,6 +6,21 @@ export const ASSESSMENT_YEARS = [
   '2014-15', '2013-14', '2012-13', '2011-12', '2010-11'
 ];
 
+// FIX: Add missing RESIDENTIAL_STATUS_OPTIONS constant to resolve import and type errors in StartHere.tsx
+export const RESIDENTIAL_STATUS_OPTIONS = {
+    resident: [
+        { id: 'res_cond1', text: 'Fulfilled basic conditions for residency and also both additional conditions for being Ordinarily Resident.' },
+        { id: 'res_cond2', text: 'Deemed Resident u/s 6(1A) (Indian citizen, total income > ₹15 lakh, not liable for tax elsewhere).' },
+    ],
+    rnor: [
+        { id: 'rnor_cond1', text: 'Fulfilled basic residency conditions but NOT one or both additional conditions for being Ordinarily Resident.' },
+        { id: 'rnor_cond2', text: 'Indian citizen/PIO, total income > ₹15 lakh (excl. foreign sources), who has been in India for 120-181 days in the year.' },
+    ],
+    non_resident: [
+        { id: 'nr_cond1', text: 'Did not meet any of the basic conditions for residency in India.' },
+    ],
+};
+
 export const INCOME_HEADS = [
     'Salary',
     'House Property',
@@ -243,7 +258,7 @@ const configs: { [key: string]: any } = {
     ...commonConfig,
     NEW_REGIME_AVAILABLE: true,
     TAX_RATES: { ...commonConfig.TAX_RATES, CESS: 0.04 },
-    individual: { DEDUCTION_LIMITS: { ...commonConfig.DEDUCTION_LIMITS, STANDARD_DEDUCTION: 50000 }, REBATE_87A: { LIMIT: 12500, INCOME_CEILING: 500000 }, SLABS: { [TaxRegime.Old]: slabs_1718, [TaxRegime.New]: slabs_2122_new }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ]},
+    individual: { DEDUCTION_LIMITS: { ...commonConfig.DEDUCTION_LIMITS, STANDARD_DEDUCTION: 50000 }, REBATE_87A: { LIMIT: 12500, INCOME_CEILING: 500000 }, REBATE_87A_NEW: { LIMIT: 12500, INCOME_CEILING: 500000 }, SLABS: { [TaxRegime.Old]: slabs_1718, [TaxRegime.New]: slabs_2122_new }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], SURCHARGE_RATES_NEW: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], },
     huf: { SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2122_new.below60 } }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ] }, aop: { SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2122_new.below60 } }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ] }, boi: { SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2122_new.below60 } }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ] }, 'artificial juridical person': { SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2122_new.below60 } }, SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ] },
     firm: commonFlatRateEntityConfig(0.30, [{ limit: 10000000, rate: 0.12 }]), llp: commonFlatRateEntityConfig(0.30, [{ limit: 10000000, rate: 0.12 }]), 'local authority': commonFlatRateEntityConfig(0.30, [{ limit: 10000000, rate: 0.12 }]),
     'co-operative society': { SLABS: coop_slabs, SURCHARGE_RATES: [{ limit: 10000000, rate: 0.12 }] },
@@ -303,27 +318,27 @@ configs['2026-27'] = {
     NEW_REGIME_AVAILABLE: true,
     TAX_RATES: { ...commonConfig.TAX_RATES, CESS: 0.04 },
     individual: { 
-        DEDUCTION_LIMITS: { ...commonConfig.DEDUCTION_LIMITS, STANDARD_DEDUCTION: 50000, STANDARD_DEDUCTION_NEW_REGIME: 50000 }, 
+        DEDUCTION_LIMITS: { ...commonConfig.DEDUCTION_LIMITS, STANDARD_DEDUCTION: 50000, STANDARD_DEDUCTION_NEW_REGIME: 75000 }, 
         REBATE_87A: { LIMIT: 12500, INCOME_CEILING: 500000 }, 
-        REBATE_87A_NEW: { LIMIT: 60000, INCOME_CEILING: 1200000 }, 
-        SLABS: { [TaxRegime.Old]: slabs_1718, [TaxRegime.New]: slabs_2627_new }, 
+        REBATE_87A_NEW: { LIMIT: 25000, INCOME_CEILING: 700000 }, 
+        SLABS: { [TaxRegime.Old]: slabs_1718, [TaxRegime.New]: slabs_2425_new }, 
         SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], 
         SURCHARGE_RATES_NEW: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: Infinity, rate: 0.25 } ], 
     },
     huf: { 
-        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2627_new.below60 } }, 
+        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2425_new.below60 } }, 
         SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], 
     },
     aop: { 
-        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2627_new.below60 } }, 
+        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2425_new.below60 } }, 
         SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], 
     },
     boi: { 
-        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2627_new.below60 } }, 
+        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2425_new.below60 } }, 
         SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], 
     },
    'artificial juridical person': { 
-        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2627_new.below60 } }, 
+        SLABS: { [TaxRegime.Old]: { below60: slabs_1718.below60 }, [TaxRegime.New]: { below60: slabs_2425_new.below60 } }, 
         SURCHARGE_RATES: [ { limit: 5000000, rate: 0.10 }, { limit: 10000000, rate: 0.15 }, { limit: 20000000, rate: 0.25 }, { limit: 50000000, rate: 0.37 } ], 
     },
     firm: commonFlatRateEntityConfig(0.30, [{ limit: 10000000, rate: 0.12 }]), 

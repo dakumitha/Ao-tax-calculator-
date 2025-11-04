@@ -197,6 +197,7 @@ export interface DeemedIncome {
 export interface Deductions {
   c80: IncomeSource; // 80C, 80CCC, 80CCD(1)
   ccd1b80: IncomeSource; // 80CCD(1B) - NPS Contribution
+  ccd1b80_minor: IncomeSource; // 80CCD(1B) - For Minor
   ccd2_80: IncomeSource; // 80CCD(2) - Employer NPS Contribution
   d80: IncomeSource; // 80D - Health Insurance Premium
   dd80: IncomeSource; // 80DD - Disabled Dependent

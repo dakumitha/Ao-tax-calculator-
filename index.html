@@ -16,14 +16,17 @@
 }
 </script>
 <style>
+    /* --- PRINT STYLES --- */
     .print-only {
         display: none;
     }
     @media print {
         body {
             background-color: white !important;
-            font-size: 9pt; /* Smaller base font size */
+            font-size: 9pt;
             margin: 0;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
         header, nav, button, input, select, textarea, .no-print {
             display: none !important;
@@ -37,36 +40,42 @@
         .print-only {
             display: block;
             padding: 0.5rem 0;
-            border-bottom: 1px solid #666; /* Thinner border */
+            border-bottom: 1px solid #666;
             margin-bottom: 1rem;
         }
         .card-for-print {
             box-shadow: none !important;
             border: 1px solid #ccc;
-            margin-bottom: 0.5rem; /* Reduced margin */
-            padding: 0.5rem; /* Reduced padding */
+            margin-bottom: 0.5rem;
+            padding: 0.5rem;
             page-break-inside: avoid;
         }
         .card-for-print > h2 {
-            font-size: 1.1rem; /* Smaller heading */
+            font-size: 1.1rem;
             border-bottom: 1px solid #ddd;
-            padding-bottom: 0.25rem; /* Reduced padding */
-            margin-bottom: 0.5rem; /* Reduced margin */
+            padding-bottom: 0.25rem;
+            margin-bottom: 0.5rem;
         }
         table {
-            font-size: 8pt !important; /* Smaller table font */
+            font-size: 8pt !important;
             width: 100%;
         }
         th, td {
-             padding: 4px !important; /* Reduced padding for table cells */
+             padding: 4px !important;
         }
         tr {
             page-break-inside: avoid;
         }
+        /* Ensure background colors are printed */
+        .bg-gray-50 { background-color: #f9fafb !important; }
+        .bg-blue-100 { background-color: #ebf8ff !important; }
+        .bg-gray-100 { background-color: #f7fafc !important; }
     }
-    /* Responsive Tables CSS */
+
+    /* --- RESPONSIVE STYLES (screens < 768px) --- */
     @media screen and (max-width: 767px) {
-        /* For data entry tables in Salary, Deductions etc. */
+        
+        /* Data Entry Tables (e.g., Salary, Deductions) */
         .responsive-table thead {
             display: none;
         }
@@ -93,61 +102,6 @@
         }
         .responsive-table td:last-child {
             padding-bottom: 0;
-        }
-        .responsive-table input {
-            width: 100% !important;
-        }
-        
-        /* For the summary comparison table */
-        .responsive-summary-table thead {
-            display: none;
-        }
-        .responsive-summary-table, .responsive-summary-table tbody, .responsive-summary-table tr {
-            display: block;
-            width: 100%;
-        }
-        .responsive-summary-table tr {
-            padding: 0.75rem 0;
-            border-bottom: 1px solid #e2e8f0;
-        }
-        .responsive-summary-table tr:last-child {
-             border-bottom: none;
-        }
-        .responsive-summary-table td {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.5rem 0.5rem;
-            text-align: right;
-        }
-        .responsive-summary-table td:before {
-            content: attr(data-label);
-            font-weight: 600;
-            text-align: left;
-            padding-right: 1rem;
-        }
-        /* First TD is the main label, should take full width */
-        .responsive-summary-table td:first-child {
-             display: block;
-             text-align: left;
-             font-weight: bold;
-             padding: 0.5rem;
-             padding-left: 0;
-             background-color: #f7fafc; /* bg-gray-100 */
-        }
-        /* Hide the pseudo-element for the first TD */
-        .responsive-summary-table td:first-child:before {
-            content: "";
-            display: none;
-        }
-
-        /* Special handling for the final totals row */
-        .responsive-summary-table .final-total-row td {
-            font-size: 1.125rem; /* text-lg */
-        }
-        .responsive-summary-table .final-total-row td:first-child {
-            font-size: 1.25rem;
-            background-color: #ebf8ff; /* bg-blue-100 */
         }
     }
 </style>

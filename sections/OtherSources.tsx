@@ -1,0 +1,14 @@
+import React from 'react';
+import Card from '../components/Card';
+
+const OtherSources: React.FC = () => {
+    return (
+        <Card title="Income from Other Sources">
+            <div className="p-4 bg-gray-100 rounded-md text-center text-gray-600">
+                <p className="font-semibold">This section will be enabled in a future update.</p>
+            </div>
+        </Card>
+    );
+};
+
+export default OtherSources;

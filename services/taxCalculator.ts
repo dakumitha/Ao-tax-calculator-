@@ -313,7 +313,9 @@ function calculateAllowedDeductions(data: TaxData, yearConfig: any, gtiForDeduct
 
     // Sec 80CCD(1B) - Over and above 80C
     const claimedCCD1B = getClaimed(deductions.ccd1b80);
-    totalDeduction += Math.min(claimedCCD1B, limits.CCD1B80 || 50000);
+    const claimedCCD1BMinor = getClaimed(deductions.ccd1b80_minor);
+    totalDeduction += Math.min(claimedCCD1B + (claimedCCD1BMinor || 0), limits.CCD1B80 || 50000);
+
 
     // Sec 80CCD(2) - Employer contribution
     const salaryFor80CCD2 = getTaxableValue(data.salary.basicSalary, data.residentialStatus) + getTaxableValue(data.salary.allowances, data.residentialStatus);
